@@ -6,6 +6,7 @@ if __package__:
     from .nodes.ltx2_loader import DaSiWa_LTX2LoraLoader
     from .nodes.watermark_nodes import DaSiWa_Watermark
     from .nodes.random_string_picker import DaSiWa_RandomStringPicker
+    from .nodes.wildcard_preset_prompt_builder import DaSiWa_WildcardPresetPromptBuilder
     from .nodes.llm_nodes import DaSiWa_LLMModelSelector, DaSiWa_LLMAnalyze
     from .nodes.enhanced_video_combine import DaSiWa_EnhancedVideoCombine
     from .nodes import system_monitor
@@ -22,6 +23,7 @@ if __package__:
         "DaSiWa_LTX2LoraLoader": DaSiWa_LTX2LoraLoader,
         "DaSiWa_Watermark": DaSiWa_Watermark,
         "DaSiWa_RandomStringPicker": DaSiWa_RandomStringPicker,
+        "DaSiWa_WildcardPresetPromptBuilder": DaSiWa_WildcardPresetPromptBuilder,
         "DaSiWa_LLMModelSelector": DaSiWa_LLMModelSelector,
         "DaSiWa_LLMAnalyze": DaSiWa_LLMAnalyze,
         "DaSiWa_EnhancedVideoCombine": DaSiWa_EnhancedVideoCombine,
@@ -39,6 +41,7 @@ if __package__:
         "DaSiWa_LTX2LoraLoader": "DaSiWa LTX-2 LoRA Loader",
         "DaSiWa_Watermark": "DaSiWa Watermark Overlay",
         "DaSiWa_RandomStringPicker": "DaSiWa Random String Picker",
+        "DaSiWa_WildcardPresetPromptBuilder": "DaSiWa Wildcard & Preset Prompt Builder",
         "DaSiWa_LLMModelSelector": "DaSiWa LLM Model Selector",
         "DaSiWa_LLMAnalyze": "DaSiWa LLM Analyze",
         "DaSiWa_EnhancedVideoCombine": "DaSiWa Enhanced Video Combine",
