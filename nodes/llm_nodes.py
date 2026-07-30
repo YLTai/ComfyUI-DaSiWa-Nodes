@@ -6,7 +6,10 @@ does not hold a live reference to a very large model.
 """
 
 import gc
+import json
 import os
+from urllib import error as urlerror
+from urllib import request as urlrequest
 from dataclasses import dataclass
 
 import numpy as np
@@ -218,7 +221,8 @@ def _resolve_hf_repo_path(hf_repo_id, hf_revision, download_if_missing):
     return _normalize_model_path(local_dir)
 
 
-def _resolve_model_path(model_name, custom_path, hf_repo_id="", hf_revision="main", download_if_missing=False):
+def _resolve_model_path(model_name, custom_path, hf_repo_id="", hf_revision="main", download_if_missing=False,
+                        allow_gguf=False):
     path = (custom_path or "").strip()
     if path:
         path = os.path.expanduser(path)
@@ -230,11 +234,11 @@ def _resolve_model_path(model_name, custom_path, hf_repo_id="", hf_revision="mai
                     break
         if not os.path.exists(path):
             raise FileNotFoundError(f"LLM path does not exist: {path}")
-        return _normalize_model_path(path)
+        return _normalize_model_path(path, allow_gguf=allow_gguf)
 
     hf_path = _resolve_hf_repo_path(hf_repo_id, hf_revision, download_if_missing)
     if hf_path:
-        return _normalize_model_path(hf_path)
+        return _normalize_model_path(hf_path, allow_gguf=allow_gguf)
 
     if not model_name or model_name == "None":
         raise ValueError("Choose an LLM model or provide a custom_path.")
@@ -242,22 +246,24 @@ def _resolve_model_path(model_name, custom_path, hf_repo_id="", hf_revision="mai
     for base in _folder_paths_for_llm():
         candidate = os.path.join(base, model_name)
         if os.path.exists(candidate):
-            return _normalize_model_path(candidate)
+            return _normalize_model_path(candidate, allow_gguf=allow_gguf)
 
     try:
         full_path = folder_paths.get_full_path("llm", model_name)
     except Exception:
         full_path = None
     if full_path and os.path.exists(full_path):
-        return _normalize_model_path(full_path)
+        return _normalize_model_path(full_path, allow_gguf=allow_gguf)
 
     raise FileNotFoundError(f"Could not find LLM model: {model_name}")
 
 
-def _normalize_model_path(path):
+def _normalize_model_path(path, allow_gguf=False):
     if os.path.isfile(path):
         lower = path.lower()
         if lower.endswith(".gguf"):
+            if allow_gguf:
+                return path
             raise ValueError(
                 "GGUF files are not supported by the transformers backend yet. "
                 "Use a Hugging Face/transformers model folder, or add llama.cpp support later."
@@ -313,6 +319,10 @@ def _to_device(batch, device):
 def _cleanup_cuda():
     gc.collect()
     if torch.cuda.is_available():
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
         torch.cuda.empty_cache()
         try:
             torch.cuda.ipc_collect()
@@ -328,13 +338,44 @@ def _clear_llm_cache(model_path=None):
             loaded = _LLM_CACHE.pop(key, None)
             if loaded is not None:
                 try:
-                    loaded.model.to("cpu")
+                    close = getattr(loaded.model, "close", None)
+                    if callable(close):
+                        close()
+                    else:
+                        loaded.model.to("cpu")
                 except Exception:
                     pass
                 del loaded
                 removed += 1
     _cleanup_cuda()
     return removed
+
+
+def _release_all_model_memory():
+    """Release DaSiWa models and ask ComfyUI to unload its managed models too."""
+    _clear_llm_cache()
+    try:
+        import comfy.model_management as model_management
+        model_management.unload_all_models()
+        model_management.soft_empty_cache()
+    except ImportError:
+        pass
+    _cleanup_cuda()
+
+
+def _generation_cache_kwargs(config, use_kv_cache):
+    kwargs = {"use_cache": use_kv_cache}
+    implementation = config.get("kv_cache_implementation", "default")
+    if not use_kv_cache or implementation == "default":
+        return kwargs
+    kwargs["cache_implementation"] = implementation
+    if implementation == "quantized":
+        kwargs["cache_config"] = {
+            "backend": config.get("kv_cache_quant_backend", "quanto"),
+            "nbits": config.get("kv_cache_nbits", 4),
+            "residual_length": config.get("kv_cache_residual_length", 128),
+        }
+    return kwargs
 
 
 def _load_transformers_model(config, need_vision):
@@ -450,6 +491,92 @@ def _load_transformers_model(config, need_vision):
     if config["cache_mode"] == "cached":
         _LLM_CACHE[cache_key] = loaded
     return loaded
+
+
+def _load_llama_cpp_model(config, need_vision):
+    if need_vision:
+        raise ValueError("The llama.cpp backend currently supports text-only GGUF models.")
+    try:
+        from llama_cpp import Llama
+    except ImportError as exc:
+        raise ImportError(
+            "GGUF loading requires llama-cpp-python. Install a CUDA-enabled build in the ComfyUI environment."
+        ) from exc
+
+    cache_key = (
+        config["model_path"], config["llama_n_ctx"], config["llama_n_gpu_layers"],
+        config["llama_n_threads"], config["llama_chat_format"],
+    )
+    if config["cache_mode"] == "cached" and cache_key in _LLM_CACHE:
+        return _LLM_CACHE[cache_key]
+
+    kwargs = {
+        "model_path": config["model_path"],
+        "n_ctx": config["llama_n_ctx"],
+        "n_gpu_layers": config["llama_n_gpu_layers"],
+        "verbose": False,
+    }
+    if config["llama_n_threads"] > 0:
+        kwargs["n_threads"] = config["llama_n_threads"]
+    if config["llama_chat_format"]:
+        kwargs["chat_format"] = config["llama_chat_format"]
+    loaded = _LoadedLLM(model=Llama(**kwargs), tokenizer=None, processor=None, is_vision=False)
+    if config["cache_mode"] == "cached":
+        _LLM_CACHE[cache_key] = loaded
+    return loaded
+
+
+def _run_llama_cpp_generation(loaded, system_prompt, user_text, max_new_tokens, temperature, top_p,
+                              repetition_penalty, seed):
+    messages = _messages_for_prompt(system_prompt, user_text, 0)
+    kwargs = {
+        "messages": messages,
+        "max_tokens": max_new_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
+        "repeat_penalty": repetition_penalty,
+    }
+    if seed >= 0:
+        kwargs["seed"] = seed
+    response = loaded.model.create_chat_completion(**kwargs)
+    return response["choices"][0]["message"]["content"].strip(), 0
+
+
+def _run_ollama_generation(config, system_prompt, user_text, max_new_tokens, temperature, top_p,
+                           repetition_penalty, seed, pil_images, unload_after_request=False):
+    if pil_images:
+        raise ValueError("The Ollama backend currently supports text-only analysis.")
+    messages = _messages_for_prompt(system_prompt, user_text, 0)
+    options = {
+        "num_predict": max_new_tokens,
+        "temperature": temperature,
+        "top_p": top_p,
+        "repeat_penalty": repetition_penalty,
+    }
+    if seed >= 0:
+        options["seed"] = seed
+    payload_data = {
+        "model": config["model_path"],
+        "messages": messages,
+        "stream": False,
+        "options": options,
+    }
+    # Ollama owns its model memory in a separate server process; ComfyUI's CUDA
+    # cleanup cannot release it. keep_alive=0 makes Ollama unload after this call.
+    if unload_after_request:
+        payload_data["keep_alive"] = 0
+    payload = json.dumps(payload_data).encode()
+    endpoint = config["ollama_url"].rstrip("/") + "/api/chat"
+    request = urlrequest.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urlrequest.urlopen(request, timeout=config["ollama_timeout"]) as response:
+            result = json.loads(response.read().decode())
+    except (urlerror.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(f"Could not reach Ollama at {endpoint}: {exc}") from exc
+    try:
+        return result["message"]["content"].strip(), 0
+    except (KeyError, TypeError) as exc:
+        raise RuntimeError(f"Ollama returned an unexpected response: {result}") from exc
 
 
 def _image_tensor_to_pil(image, resize_max_px, resize_algorithm):
@@ -621,8 +748,8 @@ def _run_generation(loaded, config, system_prompt, user_text, pil_images, max_ne
     gen_kwargs = {
         "max_new_tokens": max_new_tokens,
         "repetition_penalty": repetition_penalty,
-        "use_cache": use_kv_cache,
     }
+    gen_kwargs.update(_generation_cache_kwargs(config, use_kv_cache))
     if temperature > 0:
         gen_kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
     else:
@@ -652,7 +779,7 @@ class DaSiWa_LLMModelSelector:
                 "hf_repo_id": ("STRING", {"default": "", "description": "Optional Hugging Face repo id, for example Qwen/Qwen2.5-VL-7B-Instruct. Overrides model when set."}),
                 "hf_revision": ("STRING", {"default": "main", "description": "HF branch, tag, or commit. Used when downloading or locating a repo copy."}),
                 "download_if_missing": ("BOOLEAN", {"default": False, "description": "Download hf_repo_id into ComfyUI/models/llm if it is not already present."}),
-                "backend": (["transformers"], {"default": "transformers", "description": "Inference backend. Transformers is supported in this version."}),
+                "backend": (["transformers", "llama_cpp", "ollama"], {"default": "transformers", "description": "Transformers loads complete Hugging Face folders, llama.cpp loads local GGUF files, and Ollama calls its local or remote API."}),
                 "task": (["auto", "text", "vision"], {"default": "auto", "description": "Use vision when analyzing connected images/frame batches."}),
                 "device": (["auto", "cuda", "cpu"], {"default": "auto", "description": "Device placement for the model."}),
                 "dtype": (["auto", "float16", "bfloat16", "float32"], {"default": "auto", "description": "Model dtype. Auto follows the model config when possible."}),
@@ -660,6 +787,17 @@ class DaSiWa_LLMModelSelector:
                 "cache_mode": (["cached", "unload_after_run"], {"default": "unload_after_run", "description": "Cached is faster. Unload after run frees RAM/VRAM after every output."}),
                 "trust_remote_code": ("BOOLEAN", {"default": False, "description": "Allow custom model code from the model folder."}),
                 "attention_implementation": (["auto", "sdpa", "flash_attention_2", "eager"], {"default": "auto", "description": "Optional attention backend override."}),
+                "kv_cache_implementation": (["default", "dynamic", "static", "quantized"], {"default": "default", "description": "Transformers KV-cache strategy. Quantized reduces generation memory but requires a compatible Transformers cache backend."}),
+                "kv_cache_quant_backend": (["quanto", "hqq"], {"default": "quanto", "description": "Backend used only by the quantized Transformers KV cache."}),
+                "kv_cache_nbits": (["2", "4", "8"], {"default": "4", "description": "Bit width used only by the quantized Transformers KV cache."}),
+                "kv_cache_residual_length": ("INT", {"default": 128, "min": 0, "max": 16384, "step": 8, "description": "Recent KV tokens retained at full precision before older tokens are quantized."}),
+                "llama_n_ctx": ("INT", {"default": 8192, "min": 512, "max": 1048576, "step": 512, "description": "llama.cpp context size for a local GGUF model."}),
+                "llama_n_gpu_layers": ("INT", {"default": -1, "min": -1, "max": 1000, "step": 1, "description": "llama.cpp layers offloaded to GPU. -1 requests full offload; 0 is CPU-only."}),
+                "llama_n_threads": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1, "description": "llama.cpp CPU threads. 0 lets llama.cpp choose."}),
+                "llama_chat_format": ("STRING", {"default": "", "description": "Optional llama.cpp chat format, for example chatml. Leave empty to use GGUF metadata."}),
+                "ollama_model": ("STRING", {"default": "", "description": "Ollama model name, for example qwen3:8b. Required when backend is ollama."}),
+                "ollama_url": ("STRING", {"default": "http://127.0.0.1:11434", "description": "Ollama server base URL."}),
+                "ollama_timeout": ("INT", {"default": 300, "min": 1, "max": 3600, "step": 1, "description": "Ollama request timeout in seconds."}),
             }
         }
 
@@ -670,8 +808,18 @@ class DaSiWa_LLMModelSelector:
 
     def select(self, model, custom_path, hf_repo_id, hf_revision, download_if_missing,
                backend, task, device, dtype, quantization, cache_mode, trust_remote_code,
-               attention_implementation):
-        model_path = _resolve_model_path(model, custom_path, hf_repo_id, hf_revision, download_if_missing)
+               attention_implementation, kv_cache_implementation, kv_cache_quant_backend,
+               kv_cache_nbits, kv_cache_residual_length, llama_n_ctx, llama_n_gpu_layers,
+               llama_n_threads, llama_chat_format, ollama_model, ollama_url, ollama_timeout):
+        if backend == "ollama":
+            model_path = ollama_model.strip()
+            if not model_path:
+                raise ValueError("Enter ollama_model when backend is ollama.")
+        else:
+            model_path = _resolve_model_path(
+                model, custom_path, hf_repo_id, hf_revision, download_if_missing,
+                allow_gguf=backend == "llama_cpp",
+            )
         return ({
             "model_path": model_path,
             "hf_repo_id": hf_repo_id,
@@ -684,6 +832,16 @@ class DaSiWa_LLMModelSelector:
             "cache_mode": cache_mode,
             "trust_remote_code": bool(trust_remote_code),
             "attention_implementation": attention_implementation,
+            "kv_cache_implementation": kv_cache_implementation,
+            "kv_cache_quant_backend": kv_cache_quant_backend,
+            "kv_cache_nbits": int(kv_cache_nbits),
+            "kv_cache_residual_length": kv_cache_residual_length,
+            "llama_n_ctx": llama_n_ctx,
+            "llama_n_gpu_layers": llama_n_gpu_layers,
+            "llama_n_threads": llama_n_threads,
+            "llama_chat_format": llama_chat_format.strip(),
+            "ollama_url": ollama_url.strip(),
+            "ollama_timeout": ollama_timeout,
         },)
 
 
@@ -730,8 +888,9 @@ class DaSiWa_LLMAnalyze:
                 max_input_tokens, temperature, top_p, repetition_penalty, use_kv_cache,
                 seed, max_frames, frame_stride, frame_strategy, resize_max_px,
                 resize_algorithm, memory_cleanup, images=None, text_input=""):
-        if llm_config.get("backend") != "transformers":
-            raise ValueError(f"Unsupported LLM backend: {llm_config.get('backend')}")
+        backend = llm_config.get("backend")
+        if backend not in ("transformers", "llama_cpp", "ollama"):
+            raise ValueError(f"Unsupported LLM backend: {backend}")
 
         final_system, user_text = _compose_user_text(
             system_prompt_preset,
@@ -754,25 +913,29 @@ class DaSiWa_LLMAnalyze:
         cleanup_before = memory_cleanup in ("before_run", "before_and_after")
         cleanup_after = memory_cleanup in ("after_run", "before_and_after")
         if cleanup_before:
-            _clear_llm_cache()
+            _release_all_model_memory()
         try:
-            loaded = _load_transformers_model(llm_config, need_vision=len(pil_images) > 0)
-            response, image_count = _run_generation(
-                loaded,
-                llm_config,
-                final_system,
-                user_text,
-                pil_images,
-                max_new_tokens,
-                temperature,
-                top_p,
-                repetition_penalty,
-                seed,
-                max_input_tokens,
-                use_kv_cache,
-            )
+            if backend == "transformers":
+                loaded = _load_transformers_model(llm_config, need_vision=len(pil_images) > 0)
+                response, image_count = _run_generation(
+                    loaded, llm_config, final_system, user_text, pil_images, max_new_tokens,
+                    temperature, top_p, repetition_penalty, seed, max_input_tokens, use_kv_cache,
+                )
+            elif backend == "llama_cpp":
+                loaded = _load_llama_cpp_model(llm_config, need_vision=len(pil_images) > 0)
+                response, image_count = _run_llama_cpp_generation(
+                    loaded, final_system, user_text, max_new_tokens, temperature, top_p,
+                    repetition_penalty, seed,
+                )
+            else:
+                response, image_count = _run_ollama_generation(
+                    llm_config, final_system, user_text, max_new_tokens, temperature, top_p,
+                    repetition_penalty, seed, pil_images,
+                    unload_after_request=(llm_config.get("cache_mode") == "unload_after_run" or cleanup_after),
+                )
             info = (
                 f"model={llm_config['model_path']}; "
+                f"backend={backend}; "
                 f"system_prompt_preset={system_prompt_preset}; "
                 f"cache_mode={llm_config['cache_mode']}; "
                 f"memory_cleanup={memory_cleanup}; "
@@ -780,15 +943,20 @@ class DaSiWa_LLMAnalyze:
                 f"resize_max_px={resize_max_px}; "
                 f"resize_algorithm={resize_algorithm}; "
                 f"max_input_tokens={max_input_tokens}; "
-                f"use_kv_cache={use_kv_cache}"
+                f"use_kv_cache={use_kv_cache}; "
+                f"kv_cache_implementation={llm_config.get('kv_cache_implementation', 'default')}"
             )
             return (response, info)
         finally:
             if llm_config.get("cache_mode") == "unload_after_run" or cleanup_after:
-                _clear_llm_cache(llm_config.get("model_path"))
+                _release_all_model_memory()
                 if loaded is not None:
                     try:
-                        loaded.model.to("cpu")
+                        close = getattr(loaded.model, "close", None)
+                        if callable(close):
+                            close()
+                        else:
+                            loaded.model.to("cpu")
                     except Exception:
                         pass
                     del loaded
