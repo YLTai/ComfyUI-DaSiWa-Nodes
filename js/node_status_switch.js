@@ -64,6 +64,71 @@ function findBoolWidget(node) {
     return node?.widgets?.find(isBoolWidget) ?? null;
 }
 
+function asBoolean(value) {
+    if (typeof value === "boolean") return value;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return null;
+}
+
+function nodesInGraphTree(graph, visited = new Set()) {
+    if (!graph || visited.has(graph)) return [];
+    visited.add(graph);
+
+    const nodes = graph._nodes ?? graph.nodes ?? [];
+    return nodes.flatMap((node) => [node, ...nodesInGraphTree(node.subgraph, visited)]);
+}
+
+/**
+ * In the current frontend, a promoted widget is store-backed by the enclosing
+ * subgraph host.  The original widget inside the subgraph is no longer the
+ * source of truth, so resolve its host widget before reading the local value.
+ */
+function readPromotedWidgetValue(node, widgetName) {
+    const childGraph = node?.graph;
+    const rootGraph = childGraph?.rootGraph ?? app.graph;
+    if (!childGraph || !rootGraph || childGraph === rootGraph) return null;
+
+    const widgetInput = (node.inputs ?? []).find(
+        (input) => input?.widget?.name === widgetName || input?.name === widgetName
+    );
+    for (const host of nodesInGraphTree(rootGraph)) {
+        if (host?.subgraph !== childGraph) continue;
+        for (const hostInput of host.inputs ?? []) {
+            const slot = hostInput?._subgraphSlot;
+            for (const linkId of slot?.linkIds ?? []) {
+                const link = childGraph.getLink?.(linkId) ??
+                    childGraph.links?.[linkId] ?? childGraph._links?.get?.(linkId);
+                const resolved = link?.resolve?.(childGraph);
+                if (resolved?.inputNode !== node) continue;
+                if (widgetInput && resolved.input !== widgetInput) continue;
+
+                // A promoted widget can itself be linked on the subgraph
+                // host.  In that case the outer connection, not the host's
+                // store-backed widget value, is authoritative.
+                const parentGraph = host.graph ?? rootGraph;
+                if (hostInput.link != null && parentGraph) {
+                    const outerLink = parentGraph.getLink?.(hostInput.link) ??
+                        parentGraph.links?.[hostInput.link] ??
+                        parentGraph._links?.get?.(hostInput.link);
+                    const parentNodes = parentGraph._nodes ?? parentGraph.nodes ?? [];
+                    const source = resolveSourceNode(
+                        parentNodes.find((candidate) => candidate.id === outerLink?.origin_id),
+                        parentGraph
+                    );
+                    const linkedValue = readBoolFromNode(source);
+                    if (linkedValue != null) return linkedValue;
+                }
+
+                const hostWidget = host.getWidgetFromSlot?.(hostInput) ?? hostInput.widget;
+                const value = asBoolean(hostWidget?.value);
+                if (value != null) return value;
+            }
+        }
+    }
+    return null;
+}
+
 /**
  * Read a boolean value from a node, regardless of how the node
  * stores it.  Tries every plausible storage path.  Returns the
@@ -74,12 +139,14 @@ function readBoolFromNode(node) {
 
     // ── Path 1: conventional widget ─────────────────────────────────────
     const w = findBoolWidget(node);
-    if (w != null && typeof w.value === "boolean") return !!w.value;
+    const widgetValue = asBoolean(w?.value);
+    if (widgetValue != null) return widgetValue;
 
     // ── Path 2: any widget whose value is boolean (broader than Path 1) ──
     if (node.widgets) {
         for (const aw of node.widgets) {
-            if (typeof aw?.value === "boolean") return !!aw.value;
+            const value = asBoolean(aw?.value);
+            if (value != null) return value;
         }
     }
 
@@ -89,8 +156,10 @@ function readBoolFromNode(node) {
     // on the input slot itself, or in widgets_values keyed by widget name.
     if (node.inputs) {
         for (const inp of node.inputs) {
-            if (typeof inp?.widget?.value === "boolean") return !!inp.widget.value;
-            if (typeof inp?.value === "boolean") return !!inp.value;
+            const widgetValue = asBoolean(inp?.widget?.value);
+            if (widgetValue != null) return widgetValue;
+            const inputValue = asBoolean(inp?.value);
+            if (inputValue != null) return inputValue;
         }
     }
 
@@ -177,6 +246,9 @@ function readEnabled(switchNode, visited) {
         }
     }
 
+    const promotedValue = readPromotedWidgetValue(switchNode, "enabled");
+    if (promotedValue != null) return promotedValue;
+
     // Fallback: local widget on the switch itself
     const localW = getWidget(switchNode, "enabled");
     return localW != null ? !!localW.value : true;
@@ -237,8 +309,7 @@ function isPromptNodeKeyForTarget(key, targetId) {
 function removeInactiveTargetOutputs(output) {
     if (!output || typeof output !== "object") return;
 
-    const graph = app.graph;
-    const allNodes = graph?._nodes ?? graph?.nodes ?? [];
+    const allNodes = nodesInGraphTree(app.graph);
     if (!allNodes.length) return;
 
     const inactiveTargets = new Set();
@@ -292,7 +363,7 @@ function patchQueuePrompt() {
 }
 
 function applyAllSwitches() {
-    const allNodes = app.graph?._nodes ?? app.graph?.nodes ?? [];
+    const allNodes = nodesInGraphTree(app.graph);
     for (const n of allNodes) {
         if (n.type === NODE_TYPE) applySwitch(n);
     }
@@ -457,36 +528,15 @@ function applySwitchAndDownstream(switchNode) {
 // flipping on the switch's UI and triggers a live applySwitch.
 
 function syncExternalToLocal(switchNode) {
-    const enabledInput = (switchNode.inputs ?? []).find(
-        (inp) => inp?.name === "enabled"
-    );
-    if (!enabledInput || enabledInput.link == null) return; // no external
-
     const localW = getWidget(switchNode, "enabled");
     if (!localW) return;
 
     const graph = switchNode.graph ?? app.graph;
     if (!graph) return;
 
-    const link =
-        graph.links?.[enabledInput.link] ??
-        graph._links?.get?.(enabledInput.link);
-    if (!link) return;
-
-    const allNodes = graph._nodes ?? graph.nodes ?? [];
-    const src = resolveSourceNode(allNodes.find((n) => n.id === link.origin_id), graph);
-    if (!src) return;
-
-    // If the source is another switch, we want its *effective* enabled
-    // (the value it would output), not its raw widget.  This makes the
-    // local widget on a chained switch mirror the upstream switch
-    // through any number of links.
-    let externalValue;
-    if (src.type === NODE_TYPE) {
-        externalValue = readEnabled(src);
-    } else {
-        externalValue = readBoolFromNode(src);
-    }
+    // The external value can arrive through this input directly, or through
+    // the enclosing subgraph host after the widget has been promoted.
+    const externalValue = readEnabled(switchNode);
     if (externalValue == null) return;
 
     if (localW.value === externalValue) return; // already in sync
@@ -501,7 +551,7 @@ let mirrorLoopRunning = false;
 function mirrorFrame() {
     if (!mirrorLoopRunning) return;
     try {
-        const allNodes = app.graph?._nodes ?? app.graph?.nodes ?? [];
+        const allNodes = nodesInGraphTree(app.graph);
         for (const n of allNodes) {
             if (n.type === NODE_TYPE) syncExternalToLocal(n);
         }
