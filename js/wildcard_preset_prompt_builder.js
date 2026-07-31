@@ -187,8 +187,9 @@ app.registerExtension({
         if (nodeData.name !== NODE_TYPE) return;
         const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
 
-        nodeType.prototype.onNodeCreated = function () {
-            if (originalOnNodeCreated) originalOnNodeCreated.apply(this, arguments);
+        const installWildcardPicker = function ({ fitInitialSize = false } = {}) {
+            if (this.dasiwaWildcardPickerInstalled) return;
+            this.dasiwaWildcardPickerInstalled = true;
             injectStyles();
             const stateWidget = widget(this, "selection_state");
             const rerollWidget = widget(this, "reroll");
@@ -417,6 +418,34 @@ app.registerExtension({
                 container.textContent = `Wildcard library unavailable: ${error.message}`;
                 console.error("[DaSiWa Wildcard Builder]", error);
             });
+
+            // Only size a brand-new node once, after its DOM widget exists.
+            // Saved workflows retain their stored user-controlled dimensions.
+            if (fitInitialSize) {
+                requestAnimationFrame(() => {
+                    this.setSize([
+                        Math.max(this.size?.[0] || 0, 620),
+                        Math.max(this.size?.[1] || 0, 620),
+                    ]);
+                    this.setDirtyCanvas?.(true, true);
+                });
+            }
         };
+
+        nodeType.prototype.onNodeCreated = function () {
+            const result = originalOnNodeCreated?.apply(this, arguments);
+            installWildcardPicker.call(this, { fitInitialSize: true });
+            return result;
+        };
+
+        return undefined;
+    },
+
+    loadedGraphNode(node) {
+        if (node.type !== NODE_TYPE) return;
+        // ComfyUI restores saved nodes without guaranteeing onNodeCreated()
+        // will run after this extension has registered. Rebuild the transient,
+        // non-serialized DOM widget in that lifecycle path as well.
+        installWildcardPicker.call(node);
     },
 });

@@ -148,9 +148,14 @@ class TestPromptAssembly:
             second, _ = node.build("Booru", 7, 200, selection, 0, True)
         assert first != second
 
-    def test_frontend_never_resizes_the_node_from_picker_interactions(self):
+    def test_frontend_restores_picker_on_load_and_only_sizes_new_nodes_once(self):
         source = (Path(__file__).parents[1] / "js" / "wildcard_preset_prompt_builder.js").read_text(encoding="utf-8")
-        assert "this.setSize" not in source
+        assert "loadedGraphNode(node)" in source
+        assert "installWildcardPicker.call(node);" in source
+        assert "dasiwaWildcardPickerInstalled" in source
+        assert "installWildcardPicker.call(this, { fitInitialSize: true });" in source
+        assert "if (fitInitialSize)" in source
+        assert "Math.max(this.size?.[0] || 0, 620)" in source
         assert "overflow:auto" in source
         assert source.index('renderSection("presets", settings);') < source.index('renderSection("wildcards", settings);')
 
