@@ -99,13 +99,13 @@ class DaSiWa_MetadataImageSaver:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "images": ("IMAGE", {"description": "The image(s) to save."}),
                 "filename_prefix": ("STRING", {"default": "DaSiWa_%date:yyyyMMdd%_%seed%", "description": "The name of the file. Placeholders: %seed%, %model%, %width%, %height%, %date%."}),
                 "file_format": (["webp", "png"], {"default": "webp", "description": "WebP (modern/small) or PNG (lossless/high compatibility)."}),
                 "compression": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "description": "0=Best Quality, 100=Max Compression. PNG maps 0-100 to level 0-9. WebP maps 0-100 to quality 100-0."}),
                 "save_output": ("BOOLEAN", {"default": True, "description": "If False, images are saved to the temp folder for preview only."}),
             },
             "optional": {
+                "images": ("IMAGE", {"description": "The image(s) to save. When no image is received, the node skips saving without an error."}),
                 "metadata_config": ("METADATA_CONFIG", {"description": "Config bundle from DaSiWa Metadata Config. Values in this config override or fill saver metadata settings."}),
                 "extra_metadata": ("EXTRA_METADATA", {"description": METADATA_INPUT_DESCRIPTIONS["extra_metadata"]}),
             },
@@ -202,7 +202,7 @@ class DaSiWa_MetadataImageSaver:
 
         return value
 
-    def save_images(self, images, filename_prefix, file_format, compression, save_output,
+    def save_images(self, filename_prefix="DaSiWa_%date:yyyyMMdd%_%seed%", file_format="webp", compression=0, save_output=True, images=None,
                     node_positive=None, node_negative=None, node_model=None, node_latent=None,
                     node_noise=None, node_sigmas=None, node_sampler=None,
                     extra_metadata=None,
@@ -211,6 +211,10 @@ class DaSiWa_MetadataImageSaver:
                     text_steps=0, text_cfg=0.0, text_sampler="",
                     text_scheduler="", text_seed=0, text_model="",
                     prompt=None, extra_pnginfo=None, **kwargs):
+
+        if images is None:
+            print("[DaSiWa] Metadata Image Saver: no images received; skipping save.")
+            return {"ui": {"images": []}, "result": ("", "")}
 
         # Determine output directory and type based on save_output toggle
         output_dir = self.output_dir if save_output else folder_paths.get_temp_directory()
