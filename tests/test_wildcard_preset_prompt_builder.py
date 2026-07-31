@@ -151,12 +151,23 @@ class TestPromptAssembly:
     def test_frontend_restores_picker_on_load_and_only_sizes_new_nodes_once(self):
         source = (Path(__file__).parents[1] / "js" / "wildcard_preset_prompt_builder.js").read_text(encoding="utf-8")
         assert "loadedGraphNode(node)" in source
-        assert "installWildcardPicker.call(node);" in source
+        assert "afterConfigureGraph()" in source
+        assert "for (const node of app.graph?._nodes || [])" in source
+        assert "function isWildcardNode(node)" in source
+        assert "let installWildcardPicker;" in source
+        assert "installWildcardPicker = function" in source
+        assert "installWildcardPicker?.call(node);" in source
         assert "dasiwaWildcardPickerInstalled" in source
         assert "installWildcardPicker.call(this, { fitInitialSize: true });" in source
         assert "if (fitInitialSize)" in source
+        assert "if (this.dasiwaWildcardPickerRestored) return;" in source
+        assert "node.dasiwaWildcardPickerRestored = true;" in source
         assert "Math.max(this.size?.[0] || 0, 620)" in source
         assert "overflow:auto" in source
+        assert "domWidget.computeSize" not in source
+        assert "const PICKER_HEIGHT = 490;" in source
+        assert "getHeight: () => PICKER_HEIGHT" in source
+        assert "(this.size?.[1] || 0) - 130" not in source
         assert source.index('renderSection("presets", settings);') < source.index('renderSection("wildcards", settings);')
 
     def test_auto_reroll_checkbox_invokes_its_hidden_widget_callback(self):

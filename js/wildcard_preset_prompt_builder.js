@@ -2,11 +2,17 @@ import { app } from "../../scripts/app.js";
 
 const NODE_TYPE = "DaSiWa_WildcardPresetPromptBuilder";
 const LIBRARY_URL = "/dasiwa/wildcard-preset-prompt-builder/library";
+const PICKER_HEIGHT = 490;
 const TOKEN_RE = /[\p{L}\p{N}_]+(?:['’\-][\p{L}\p{N}_]+)?|[^\s\p{L}\p{N}_]/gu;
 const encoder = new TextEncoder();
+let installWildcardPicker;
 
 function widget(node, name) {
     return node.widgets?.find((entry) => entry.name === name);
+}
+
+function isWildcardNode(node) {
+    return node?.type === NODE_TYPE || node?.comfyClass === NODE_TYPE;
 }
 
 function hideWidget(entry) {
@@ -187,7 +193,7 @@ app.registerExtension({
         if (nodeData.name !== NODE_TYPE) return;
         const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
 
-        const installWildcardPicker = function ({ fitInitialSize = false } = {}) {
+        installWildcardPicker = function ({ fitInitialSize = false } = {}) {
             if (this.dasiwaWildcardPickerInstalled) return;
             this.dasiwaWildcardPickerInstalled = true;
             injectStyles();
@@ -202,14 +208,14 @@ app.registerExtension({
             const container = document.createElement("div");
             container.className = "dasiwa-wildcard-builder";
             container.textContent = "Loading wildcard library…";
-            const domWidget = this.addDOMWidget("wildcard_subjects", "custom", container, {
+            this.addDOMWidget("wildcard_subjects", "custom", container, {
                 serialize: false,
                 hideOnZoom: false,
-                getHeight: () => Math.max(120, (this.size?.[1] || 0) - 130),
+                // Do not derive this from node.size: ComfyUI uses getHeight()
+                // to calculate node.size, so that feedback loop grows the node
+                // on every layout pass.
+                getHeight: () => PICKER_HEIGHT,
             });
-            // Do not resize the node from the UI. The user controls its size;
-            // overflowing picker content is handled by the DOM widget scrollbar.
-            domWidget.computeSize = () => [0, 0];
             const sync = () => {
                 setWidgetValue(stateWidget, JSON.stringify(state));
                 this.properties = this.properties || {};
@@ -420,9 +426,11 @@ app.registerExtension({
             });
 
             // Only size a brand-new node once, after its DOM widget exists.
-            // Saved workflows retain their stored user-controlled dimensions.
+            // loadedGraphNode() runs before this frame for restored workflows,
+            // so their saved user-controlled dimensions are never overwritten.
             if (fitInitialSize) {
                 requestAnimationFrame(() => {
+                    if (this.dasiwaWildcardPickerRestored) return;
                     this.setSize([
                         Math.max(this.size?.[0] || 0, 620),
                         Math.max(this.size?.[1] || 0, 620),
@@ -442,10 +450,20 @@ app.registerExtension({
     },
 
     loadedGraphNode(node) {
-        if (node.type !== NODE_TYPE) return;
+        if (!isWildcardNode(node)) return;
+        node.dasiwaWildcardPickerRestored = true;
         // ComfyUI restores saved nodes without guaranteeing onNodeCreated()
         // will run after this extension has registered. Rebuild the transient,
         // non-serialized DOM widget in that lifecycle path as well.
-        installWildcardPicker.call(node);
+        installWildcardPicker?.call(node);
+    },
+
+    afterConfigureGraph() {
+        // On a browser refresh, ComfyUI can restore the graph before the DOM
+        // widget layer has mounted. Revisit every restored instance after graph
+        // configuration so the picker is always registered with that layer.
+        for (const node of app.graph?._nodes || []) {
+            if (isWildcardNode(node)) installWildcardPicker?.call(node);
+        }
     },
 });
