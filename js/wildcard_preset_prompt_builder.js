@@ -93,8 +93,11 @@ function injectStyles() {
     const style = document.createElement("style");
     style.id = "dasiwa-wildcard-builder-style";
     style.textContent = `
-.dasiwa-wildcard-builder { box-sizing:border-box; width:100%; min-width:0; height:100%; overflow:auto; color:var(--input-text,#ddd); font:12px sans-serif; }
-.dasiwa-wildcard-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:4px 0 8px; }
+.dasiwa-wildcard-builder { box-sizing:border-box; display:flex; flex-direction:column; gap:7px; width:100%; min-width:0; height:100%; overflow:hidden; color:var(--input-text,#ddd); font:12px sans-serif; }
+.dasiwa-wildcard-controls { flex:none; min-width:0; }
+.dasiwa-wildcard-selections { flex:1 1 auto; min-height:0; overflow:auto; padding-right:3px; }
+.dasiwa-wildcard-preview-segment { flex:0 1 150px; min-height:72px; overflow:auto; padding-right:3px; }
+.dasiwa-wildcard-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin:0; }
 .dasiwa-wildcard-regenerate { border:1px solid #5794c7; border-radius:4px; background:#18334c; color:#d9efff; padding:4px 9px; cursor:pointer; }
 .dasiwa-wildcard-clear { border:1px solid #626d76; border-radius:4px; background:#242b30; color:#d9e1e7; padding:4px 9px; cursor:pointer; }
 .dasiwa-wildcard-auto-reroll { display:flex; align-items:center; gap:3px; color:#c6d2db; cursor:pointer; }
@@ -121,7 +124,7 @@ function injectStyles() {
 .dasiwa-wildcard-weight { width:56px; box-sizing:border-box; background:#101519; border:1px solid #4a5d6c; color:inherit; border-radius:3px; padding:2px; }
 .dasiwa-wildcard-preview { min-width:0; color:#9cbed4; line-height:18px; overflow-wrap:anywhere; white-space:normal; }
 .dasiwa-wildcard-subject:not(.enabled) .dasiwa-wildcard-preview { color:#62717c; }
-.dasiwa-wildcard-output-preview { max-height:180px; overflow:auto; margin:10px 0 4px; border:1px solid #40515e; border-radius:4px; background:#11171b; padding:7px; }
+.dasiwa-wildcard-output-preview { box-sizing:border-box; min-height:100%; margin:0; border:1px solid #40515e; border-radius:4px; background:#11171b; padding:7px; }
 .dasiwa-wildcard-output-preview h4 { margin:0 0 4px; font-size:11px; color:#d6e7f5; }
 .dasiwa-wildcard-output-preview p { margin:0 0 7px; color:#b9d4e8; line-height:18px; overflow-wrap:anywhere; white-space:normal; }
 .dasiwa-wildcard-output-preview p:last-child { margin-bottom:0; }
@@ -260,7 +263,7 @@ app.registerExtension({
                 details.appendChild(row);
             };
 
-            const renderSection = (entryType, settings) => {
+            const renderSection = (entryType, settings, target) => {
                 const sectionCategoryKeys = Object.entries(categories)
                     .filter(([, subjects]) => subjects.some((subject) => entryValues(subject, settings.style, entryType).some(Boolean)))
                     .map(([category]) => `${entryType}/${category}`);
@@ -277,7 +280,7 @@ app.registerExtension({
                     }
                     render();
                 };
-                container.appendChild(heading);
+                target.appendChild(heading);
                 for (const [category, subjects] of Object.entries(categories)) {
                     if (!subjects.some((subject) => entryValues(subject, settings.style, entryType).some(Boolean))) continue;
                     const details = document.createElement("details");
@@ -313,7 +316,7 @@ app.registerExtension({
                     }));
                     details.appendChild(columns);
                     for (const subject of subjects) renderRow(details, category, subject, entryType, settings);
-                    container.appendChild(details);
+                    target.appendChild(details);
                 }
             };
 
@@ -323,6 +326,12 @@ app.registerExtension({
                 const positive = assemble(categories, state, settings.style, settings.seed, settings.reroll, settings.budget, false);
                 const negative = assemble(categories, state, settings.style, settings.seed, settings.reroll, settings.budget, true);
                 container.replaceChildren();
+                const controls = document.createElement("div");
+                controls.className = "dasiwa-wildcard-controls";
+                const selections = document.createElement("div");
+                selections.className = "dasiwa-wildcard-selections";
+                const previewSegment = document.createElement("div");
+                previewSegment.className = "dasiwa-wildcard-preview-segment";
                 const toolbar = document.createElement("div");
                 toolbar.className = "dasiwa-wildcard-toolbar";
                 const regenerate = document.createElement("button");
@@ -392,9 +401,9 @@ app.registerExtension({
                 badge.className = "dasiwa-wildcard-badge";
                 badge.textContent = `+ ${positive.tokens}/${settings.budget} · − ${negative.tokens}/${settings.budget}`;
                 toolbar.append(regenerate, randomSelect, clear, collapse, autoReroll, badge);
-                container.appendChild(toolbar);
-                renderSection("presets", settings);
-                renderSection("wildcards", settings);
+                controls.appendChild(toolbar);
+                renderSection("presets", settings, selections);
+                renderSection("wildcards", settings, selections);
                 const output = document.createElement("div");
                 output.className = "dasiwa-wildcard-output-preview";
                 const positiveHeading = document.createElement("h4");
@@ -407,7 +416,8 @@ app.registerExtension({
                 negativePreview.className = "negative";
                 negativePreview.textContent = negative.prompt || "—";
                 output.append(positiveHeading, positivePreview, negativeHeading, negativePreview);
-                container.appendChild(output);
+                previewSegment.appendChild(output);
+                container.append(controls, selections, previewSegment);
                 this.setDirtyCanvas?.(true, true);
             };
 

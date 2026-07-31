@@ -168,7 +168,12 @@ class TestPromptAssembly:
         assert "const PICKER_HEIGHT = 490;" in source
         assert "getHeight: () => PICKER_HEIGHT" in source
         assert "(this.size?.[1] || 0) - 130" not in source
-        assert source.index('renderSection("presets", settings);') < source.index('renderSection("wildcards", settings);')
+        assert 'controls.className = "dasiwa-wildcard-controls";' in source
+        assert 'selections.className = "dasiwa-wildcard-selections";' in source
+        assert 'previewSegment.className = "dasiwa-wildcard-preview-segment";' in source
+        assert "controls.appendChild(toolbar);" in source
+        assert "previewSegment.appendChild(output);" in source
+        assert source.index('renderSection("presets", settings, selections);') < source.index('renderSection("wildcards", settings, selections);')
 
     def test_auto_reroll_checkbox_invokes_its_hidden_widget_callback(self):
         source = (Path(__file__).parents[1] / "js" / "wildcard_preset_prompt_builder.js").read_text(encoding="utf-8")
