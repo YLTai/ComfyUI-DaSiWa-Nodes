@@ -54,3 +54,60 @@ def test_windows_parser_detects_intel_and_amd_adapters_without_vendor_tools():
     assert [gpu["vendor"] for gpu in gpus] == ["Intel", "AMD"]
     assert gpus[0]["id"].startswith("Intel:PCI\\VEN_8086")
     assert gpus[1]["memory_total"] == 17179869184
+
+
+def test_snapshot_reports_partition_capacity_and_io_rates(monkeypatch):
+    monitor = system_monitor.DaSiWaSystemMonitor()
+    partition = types.SimpleNamespace(device="/dev/nvme0n1p2", mountpoint="/", fstype="ext4")
+    usage = types.SimpleNamespace(used=25 * 1024**3, total=100 * 1024**3, percent=25.0)
+    counters = [
+        {"nvme0n1": types.SimpleNamespace(read_bytes=100, write_bytes=200)},
+        {"nvme0n1": types.SimpleNamespace(read_bytes=100 + 4 * 1024**2, write_bytes=200 + 2 * 1024**2)},
+    ]
+    monotonic = iter((10.0, 12.0))
+
+    monkeypatch.setattr(system_monitor.psutil, "virtual_memory", lambda: types.SimpleNamespace(used=1, total=2, percent=50.0), raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "swap_memory", lambda: types.SimpleNamespace(used=0, total=1, percent=0.0), raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "cpu_percent", lambda interval=None: 10.0, raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "cpu_count", lambda logical=True: 8, raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "disk_partitions", lambda all=False: [partition], raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "disk_usage", lambda path: usage, raising=False)
+    monkeypatch.setattr(system_monitor.psutil, "disk_io_counters", lambda perdisk=False: counters.pop(0), raising=False)
+    monkeypatch.setattr(system_monitor, "time", types.SimpleNamespace(monotonic=lambda: next(monotonic)), raising=False)
+    monkeypatch.setattr(monitor, "gpu_info", lambda: [])
+
+    monitor.snapshot()
+    disk = monitor.snapshot()["disks"][0]
+
+    assert disk == {
+        "path": "/", "device": "/dev/nvme0n1p2", "fstype": "ext4",
+        "used": 25 * 1024**3, "total": 100 * 1024**3, "percent": 25.0,
+        "read_mb_s": 2.0, "write_mb_s": 1.0,
+    }
+
+
+def test_snapshot_keeps_only_system_and_comfyui_filesystems(monkeypatch):
+    monitor = system_monitor.DaSiWaSystemMonitor()
+    partitions = [
+        types.SimpleNamespace(device="/dev/nvme0n1p1", mountpoint="/", fstype="ext4"),
+        types.SimpleNamespace(device="/dev/sda1", mountpoint="/mnt/comfy", fstype="ext4"),
+        types.SimpleNamespace(device="/dev/sdb1", mountpoint="/mnt/comfy/models", fstype="ext4"),
+    ]
+
+    monkeypatch.setattr(system_monitor.psutil, "disk_partitions", lambda all=False: partitions, raising=False)
+    monkeypatch.setattr(monitor, "_comfyui_path", lambda: "/mnt/comfy/custom_nodes/DaSiWa")
+
+    assert [partition.mountpoint for partition in monitor._monitored_partitions()] == ["/", "/mnt/comfy"]
+
+
+def test_snapshot_deduplicates_comfyui_bind_mount_on_system_disk(monkeypatch):
+    monitor = system_monitor.DaSiWaSystemMonitor()
+    partitions = [
+        types.SimpleNamespace(device="/dev/nvme0n1p1", mountpoint="/", fstype="ext4"),
+        types.SimpleNamespace(device="/dev/nvme0n1p1", mountpoint="/home", fstype="ext4"),
+    ]
+
+    monkeypatch.setattr(system_monitor.psutil, "disk_partitions", lambda all=False: partitions, raising=False)
+    monkeypatch.setattr(monitor, "_comfyui_path", lambda: "/home/comfyui/custom_nodes/DaSiWa")
+
+    assert [partition.mountpoint for partition in monitor._monitored_partitions()] == ["/"]

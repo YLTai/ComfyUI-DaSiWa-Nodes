@@ -11,7 +11,10 @@ The current settings are stored in the browser, so they remain active after a Co
 - **Show system monitor:** hides or shows the monitor while keeping the settings button available.
 - **Lite:** the default compact fixed-width, color-coded toolbar meters. Each meter shows a label, a numeric value, and a proportional background fill representing 0–100% usage.
 - **Full:** a spacious monitor panel with every available metric, its current value and detail, plus a live graph covering the most recent 60 telemetry samples (normally about one minute).
-- **Placement:** drag the monitor freely anywhere on the ComfyUI canvas. While dragging, drop it on the visible **Dock to top** target to return it to the toolbar. Its placement and toolbar position are retained after reload.
+- **Dock:** choose the top toolbar, left side, or right side from the settings menu. The selection is retained after reload.
+- **Widget layout:** choose horizontal or vertical meter flow. This is especially useful in left/right side docks.
+- **Widgets:** enable or disable individual CPU, memory, disk, I/O, and GPU meters. Every widget is enabled by default and choices are retained after reload.
+- **Placement:** drag the monitor freely anywhere on the ComfyUI canvas. Floating placement uses pixel-aligned coordinates to keep its text sharp. Drop it on the visible top, left, or right target to dock it.
 
 ## Display Modes
 
@@ -19,7 +22,7 @@ The current settings are stored in the browser, so they remain active after a Co
 
 Lite keeps the monitor in the toolbar as compact, fixed-width meters. It is intended for continuous at-a-glance monitoring while working in ComfyUI.
 
-Use the small grip at the monitor's left edge to float it above the canvas. To dock it again, drag that grip to the **Dock to top** target that appears at the top of the UI and release it there.
+Use the small grip at the monitor's left edge to float it above the canvas. To dock it again, drag that grip to a visible top, left, or right dock target and release it there. The settings menu provides the same dock controls without dragging.
 
 ![Lite system monitor](../assets/DaSiWa_System_Monitor.png)
 
@@ -36,7 +39,9 @@ Full opens a larger panel directly below the monitor controls. It shows all avai
 | CPU | Overall CPU utilization across all threads | Blue (`#38bdf8`) |
 | RAM | Physical memory usage | Purple (`#a78bfa`) |
 | SWAP | Swap space (Linux) or Pagefile (Windows) | Amber (`#f59e0b`) |
-| DISK | Root disk usage | Pink (`#fb7185`) |
+| DISK | System filesystem and, when different, the filesystem containing ComfyUI | Pink (`#fb7185`) |
+| RD | Read throughput for each displayed filesystem (MB/s) | Green (`#34d399`) |
+| WR | Write throughput for each displayed filesystem (MB/s) | Pink (`#f472b6`) |
 | GPU0 Util | GPU 0 compute utilization | Green (`#4ade80`) |
 | GPU0 VRAM | GPU 0 video memory usage | Cyan (`#22d3ee`) |
 | GPU0 Temp | GPU 0 temperature in °C | Orange (`#fb923c`) |
@@ -49,7 +54,8 @@ Hover over any metric chip to see detailed information:
 
 - **CPU:** Thread count
 - **RAM/SWAP:** Used / Total in human-readable units (MiB/GiB)
-- **DISK:** Mount path, used / total
+- **DISK:** Device, mount path, used / total
+- **RD/WR:** Mount path and current read/write throughput
 - **GPU:** Device ID, name, and exact VRAM used / total
 
 ## GPU Support

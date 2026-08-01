@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import psutil
@@ -179,6 +180,9 @@ class DaSiWaSystemMonitor:
         self.interval = interval
         self._thread = None
         self._stop = threading.Event()
+        self._io_lock = threading.Lock()
+        self._previous_disk_io = None
+        self._previous_disk_io_time = None
 
     def gpu_info(self):
         gpus = _nvidia_gpus() + _amd_gpus()
@@ -189,16 +193,100 @@ class DaSiWaSystemMonitor:
             gpus.extend(_intel_gpus())
         return gpus
 
+    @staticmethod
+    def _disk_device_name(device):
+        name = os.path.basename(device)
+        if name.startswith(("nvme", "mmcblk")):
+            return re.sub(r"p\d+$", "", name)
+        return re.sub(r"\d+$", "", name)
+
+    def _disk_io_rates(self):
+        try:
+            counters = psutil.disk_io_counters(perdisk=True)
+        except (AttributeError, OSError):
+            return {}
+        now = time.monotonic()
+        with self._io_lock:
+            previous = self._previous_disk_io
+            previous_time = self._previous_disk_io_time
+            self._previous_disk_io = counters
+            self._previous_disk_io_time = now
+        if previous is None or previous_time is None:
+            return {name: (0.0, 0.0) for name in counters}
+        elapsed = max(now - previous_time, 0.001)
+        rates = {}
+        for name, current in counters.items():
+            prior = previous.get(name)
+            if prior is None:
+                rates[name] = (0.0, 0.0)
+                continue
+            rates[name] = (
+                max(current.read_bytes - prior.read_bytes, 0) / elapsed / (1024 * 1024),
+                max(current.write_bytes - prior.write_bytes, 0) / elapsed / (1024 * 1024),
+            )
+        return rates
+
+    @staticmethod
+    def _partition_for_path(partitions, path):
+        target = os.path.normcase(os.path.realpath(path))
+        matches = []
+        for partition in partitions:
+            mountpoint = os.path.normcase(os.path.realpath(partition.mountpoint))
+            try:
+                if os.path.commonpath((target, mountpoint)) == mountpoint:
+                    matches.append(partition)
+            except ValueError:
+                continue
+        return max(matches, key=lambda partition: len(partition.mountpoint), default=None)
+
+    @staticmethod
+    def _comfyui_path():
+        try:
+            import folder_paths
+
+            base_path = getattr(folder_paths, "base_path", None)
+            if base_path:
+                return base_path
+        except ImportError:
+            pass
+        return str(Path(__file__).resolve())
+
+    def _monitored_partitions(self):
+        partitions = psutil.disk_partitions(all=False)
+        selected = []
+        for path in (os.path.abspath(os.sep), self._comfyui_path()):
+            partition = self._partition_for_path(partitions, path)
+            if partition and partition.device not in {item.device for item in selected}:
+                selected.append(partition)
+        return selected
+
     def snapshot(self):
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
-        disk = psutil.disk_usage(os.path.abspath(os.sep))
+        disk_io_rates = self._disk_io_rates()
+        disks = []
+        for partition in self._monitored_partitions():
+            try:
+                usage = psutil.disk_usage(partition.mountpoint)
+            except (OSError, PermissionError):
+                continue
+            read_mb_s, write_mb_s = disk_io_rates.get(self._disk_device_name(partition.device), (0.0, 0.0))
+            disks.append({
+                "path": partition.mountpoint,
+                "device": partition.device,
+                "fstype": partition.fstype,
+                "used": usage.used,
+                "total": usage.total,
+                "percent": usage.percent,
+                "read_mb_s": round(read_mb_s, 1),
+                "write_mb_s": round(write_mb_s, 1),
+            })
         return {
             "cpu_percent": psutil.cpu_percent(interval=None),
             "cpu_count": psutil.cpu_count(logical=True),
             "ram": {"used": memory.used, "total": memory.total, "percent": memory.percent},
             "swap": {"used": swap.used, "total": swap.total, "percent": swap.percent},
-            "disk": {"path": os.path.abspath(os.sep), "used": disk.used, "total": disk.total, "percent": disk.percent},
+            "disks": disks,
             "gpus": self.gpu_info(),
         }
 
