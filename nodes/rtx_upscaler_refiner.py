@@ -1,14 +1,15 @@
 import math
 import os
-import shutil
-import tempfile
-import weakref
 import torch
 import torch.nn.functional as F
 import contextlib
 from typing import Tuple
 
 import folder_paths
+try:
+    from .batch_output import allocate_cpu_output, tensor_nbytes
+except ImportError:
+    from batch_output import allocate_cpu_output, tensor_nbytes
 
 # --- Constants ---
 
@@ -19,9 +20,7 @@ DIVISIBLE_BY_VALUES = ["8", "16", "32", "64", "128"]
 COMMON_RATIOS = ["1:1", "4:3", "3:2", "16:9", "21:9"]
 RESIZE_METHODS = ["Center Crop (Fill)", "Letterbox (Fit)"]
 MAX_CHUNK_OUTPUT_PIXELS = 1024 * 1024 * 16
-MAX_IN_MEMORY_OUTPUT_BYTES = 8 * 1024 * 1024 * 1024
-MAX_DISK_BACKED_OUTPUT_BYTES = 64 * 1024 * 1024 * 1024
-TEMP_DISK_RESERVE_BYTES = 1024 * 1024 * 1024
+MAX_GPU_OUTPUT_BYTES = 8 * 1024 * 1024 * 1024
 
 # --- Helpers ---
 
@@ -33,7 +32,7 @@ def round_nearest(value: float, alignment: int) -> int:
 
 
 def _projected_output_bytes(batch_size: int, width: int, height: int, dtype: torch.dtype) -> int:
-    return int(batch_size) * int(width) * int(height) * 3 * torch.empty((), dtype=dtype).element_size()
+    return tensor_nbytes((batch_size, height, width, 3), dtype)
 
 
 def _temporary_output_directory() -> str:
@@ -42,53 +41,18 @@ def _temporary_output_directory() -> str:
     return directory
 
 
-def _has_free_disk_space(directory: str, required_bytes: int) -> bool:
-    return shutil.disk_usage(directory).free >= required_bytes + TEMP_DISK_RESERVE_BYTES
-
-
-def _remove_temporary_output(path: str):
-    try:
-        os.unlink(path)
-    except FileNotFoundError:
-        pass
-    except OSError:
-        pass
-
-
 def _allocate_output_tensor(shape: Tuple[int, int, int, int], dtype: torch.dtype, device: torch.device):
     required_bytes = _projected_output_bytes(shape[0], shape[2], shape[1], dtype)
     if device.type != "cpu":
-        if required_bytes > MAX_IN_MEMORY_OUTPUT_BYTES:
+        if required_bytes > MAX_GPU_OUTPUT_BYTES:
             raise RuntimeError(
                 f"RTX output requires {required_bytes / 1024 ** 3:.2f} GiB on {device}. "
                 "Disk-backed output is only available for CPU IMAGE batches."
             )
         return torch.zeros(shape, device=device, dtype=dtype), None
 
-    if required_bytes <= MAX_IN_MEMORY_OUTPUT_BYTES:
-        return torch.zeros(shape, device=device, dtype=dtype), None
-    if required_bytes > MAX_DISK_BACKED_OUTPUT_BYTES:
-        raise RuntimeError(
-            f"RTX output requires {required_bytes / 1024 ** 3:.2f} GiB, exceeding the "
-            f"{MAX_DISK_BACKED_OUTPUT_BYTES / 1024 ** 3:.0f} GiB disk-backed safety limit. "
-            "Reduce frame count, scale, or target resolution."
-        )
-
     directory = _temporary_output_directory()
-    if not _has_free_disk_space(directory, required_bytes):
-        raise RuntimeError(
-            f"ComfyUI temporary directory '{directory}' lacks space for the projected "
-            f"{required_bytes / 1024 ** 3:.2f} GiB RTX output plus a 1 GiB reserve."
-        )
-    descriptor, path = tempfile.mkstemp(prefix="dasiwa_rtx_output_", suffix=".mmap", dir=directory)
-    os.close(descriptor)
-    try:
-        output = torch.from_file(path, shared=True, size=math.prod(shape), dtype=dtype).reshape(shape)
-    except Exception:
-        _remove_temporary_output(path)
-        raise
-    weakref.finalize(output, _remove_temporary_output, path)
-    return output, path
+    return allocate_cpu_output(shape, dtype, directory)
 
 def _aligned_aspect_size(
     target_width: float,

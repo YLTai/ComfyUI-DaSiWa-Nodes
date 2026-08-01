@@ -51,7 +51,7 @@ Enable **randomize_position** to alternate between the four corners. The first i
 Enable **fade** and set a **fade_margin** (e.g., 0.1 for 10%) to create a professional "splash" effect. The watermark will fade in over the first 10% of frames and reappear during the last 10%, remaining hidden in between.
 
 ### Stability and Memory
-When working with 2K/4K video batches or complex LTX workflows, the node keeps the output batch in system RAM and uses one consistent CPU blend path. This is intentionally more conservative than opportunistic GPU blending, but it avoids frame-to-frame differences, fallback flicker, and black-border artifacts from device-path changes.
+When working with 2K/4K video batches or complex LTX workflows, the node keeps the output batch in system RAM and uses one consistent CPU blend path. It preserves 25% of RAM on systems below 32 GiB (minimum 1 GiB), rising to an 8 GiB maximum reserve on larger systems, and only uses temporary disk-backed output when the complete batch would cross that reserve. This avoids frame-to-frame differences, fallback flicker, and black-border artifacts from device-path changes.
 
 ### High Quality Blending
 The node automatically premultiplies the alpha channel before resizing and clamps the rotated result so transparent pixels stay transparent. This means you don't need to pre-process your logos in Photoshop; just provide a high-quality transparent PNG, and the node handles the math for a seamless overlay.
@@ -61,5 +61,5 @@ The node automatically premultiplies the alpha channel before resizing and clamp
 - **Rotation:** Uses bicubic interpolation with an axis-aligned bounding box expansion.
 - **Memory Strategy:** 
     1. Watermark is loaded, rescaled, and rotated on CPU.
-    2. Output batches are initialized from the source frames in CPU/RAM.
+    2. Output batches are initialized from the source frames in CPU/RAM, or temporary disk-backed storage when available RAM is insufficient.
     3. Frames are processed one-by-one using the same premultiplied-alpha blend path for every frame.

@@ -6,6 +6,7 @@ from PIL import Image
 from typing import Tuple
 import folder_paths
 import comfy.utils
+from .batch_output import allocate_cpu_output
 
 # --- Helpers ---
 
@@ -92,15 +93,6 @@ def _sanitize_premultiplied_rgba(x: torch.Tensor) -> torch.Tensor:
     rgb = x[:, :3, :, :].clamp(0.0, 1.0).minimum(alpha)
     return torch.cat((rgb, alpha), dim=1)
 
-def _tensor_nbytes(shape: Tuple[int, ...], dtype: torch.dtype) -> int:
-    return int(np.prod(shape)) * torch.empty((), dtype=dtype).element_size()
-
-def _safe_output_device(images: torch.Tensor, out_bytes: int) -> torch.device:
-    # Watermark compositing is intentionally deterministic. Keeping the output
-    # buffer in RAM avoids frame-to-frame differences from opportunistic CUDA
-    # blending and avoids duplicating long video batches in VRAM.
-    return torch.device("cpu")
-
 class DaSiWa_Watermark:
     DESCRIPTION = (
         "DaSiWa Watermark: A professional-grade watermark overlay node with stable CPU compositing.\n"
@@ -166,8 +158,6 @@ class DaSiWa_Watermark:
         
         B, H, W, C = images.shape
         output_dtype = images.dtype if images.is_floating_point() else torch.float32
-        out_bytes = _tensor_nbytes((B, H, W, 3), output_dtype)
-        output_device = _safe_output_device(images, out_bytes)
         full_path = folder_paths.get_annotated_filepath(watermark_path)
 
         with torch.no_grad():
@@ -216,7 +206,11 @@ class DaSiWa_Watermark:
 
             # 5. Batch Process with a stable compositor.
             # Start from a full copy so every frame is initialized before overlay.
-            out = images[:, :, :, :3].to(device=output_device, dtype=output_dtype).clone()
+            output_device = torch.device("cpu")
+            out, mmap_path = allocate_cpu_output(
+                (B, H, W, 3), output_dtype, folder_paths.get_temp_directory()
+            )
+            out.copy_(images[:, :, :, :3].to(device=output_device, dtype=output_dtype))
 
             pbar = comfy.utils.ProgressBar(B)
 
@@ -236,6 +230,8 @@ class DaSiWa_Watermark:
                 f"[DaSiWa Watermark] stable compositor: output={output_device.type}, "
                 f"dtype={output_dtype}, frames={B}"
             )
+            if mmap_path:
+                print(f"[DaSiWa Watermark] Disk-backed output: {mmap_path}")
 
             for i in range(B):
                 # Determine current position. Random mode starts at the selected position.

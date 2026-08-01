@@ -12,6 +12,12 @@ import torch
 folder_paths = types.ModuleType("folder_paths")
 folder_paths.get_temp_directory = lambda: "/tmp"
 sys.modules.setdefault("folder_paths", folder_paths)
+HELPER_PATH = Path(__file__).parents[1] / "nodes" / "batch_output.py"
+helper_spec = importlib.util.spec_from_file_location("batch_output", HELPER_PATH)
+assert helper_spec is not None and helper_spec.loader is not None
+batch_output = importlib.util.module_from_spec(helper_spec)
+sys.modules["batch_output"] = batch_output
+helper_spec.loader.exec_module(batch_output)
 MODULE_PATH = Path(__file__).parents[1] / "nodes" / "rtx_upscaler_refiner.py"
 spec = importlib.util.spec_from_file_location("rtx_upscaler_refiner", MODULE_PATH)
 assert spec is not None and spec.loader is not None
@@ -74,9 +80,8 @@ def test_projected_output_bytes_reports_full_rgb_batch_size():
 
 
 def test_large_cpu_output_uses_comfy_temp_mmap_with_stable_frame_indexes(tmp_path, monkeypatch):
-    monkeypatch.setattr(rtx_upscaler_refiner, "MAX_IN_MEMORY_OUTPUT_BYTES", 1)
+    monkeypatch.setattr(batch_output, "can_allocate_in_ram", lambda _: False)
     monkeypatch.setattr(rtx_upscaler_refiner, "_temporary_output_directory", lambda: str(tmp_path))
-    monkeypatch.setattr(rtx_upscaler_refiner, "_has_free_disk_space", lambda *_: True)
 
     output, storage_path = rtx_upscaler_refiner._allocate_output_tensor((3, 2, 2, 3), torch.float32, torch.device("cpu"))
     output[0].fill_(1)
@@ -89,18 +94,17 @@ def test_large_cpu_output_uses_comfy_temp_mmap_with_stable_frame_indexes(tmp_pat
 
 
 def test_mmap_output_fails_cleanly_when_comfy_temp_has_insufficient_space(tmp_path, monkeypatch):
-    monkeypatch.setattr(rtx_upscaler_refiner, "MAX_IN_MEMORY_OUTPUT_BYTES", 1)
-    monkeypatch.setattr(rtx_upscaler_refiner, "_temporary_output_directory", lambda: str(tmp_path))
-    monkeypatch.setattr(rtx_upscaler_refiner, "_has_free_disk_space", lambda *_: False)
+    monkeypatch.setattr(batch_output, "can_allocate_in_ram", lambda _: False)
 
     with pytest.raises(RuntimeError, match="ComfyUI temporary directory"):
-        rtx_upscaler_refiner._allocate_output_tensor((3, 2, 2, 3), torch.float32, torch.device("cpu"))
+        batch_output.allocate_cpu_output(
+            (3, 2, 2, 3), torch.float32, str(tmp_path), has_free_disk_space=lambda *_: False
+        )
 
 
 def test_mmap_output_removes_its_temporary_file_when_tensor_is_released(tmp_path, monkeypatch):
-    monkeypatch.setattr(rtx_upscaler_refiner, "MAX_IN_MEMORY_OUTPUT_BYTES", 1)
+    monkeypatch.setattr(batch_output, "can_allocate_in_ram", lambda _: False)
     monkeypatch.setattr(rtx_upscaler_refiner, "_temporary_output_directory", lambda: str(tmp_path))
-    monkeypatch.setattr(rtx_upscaler_refiner, "_has_free_disk_space", lambda *_: True)
 
     output, storage_path = rtx_upscaler_refiner._allocate_output_tensor((1, 2, 2, 3), torch.float32, torch.device("cpu"))
 

@@ -52,5 +52,9 @@ Check these settings first when users report degraded quality:
 *   **VRAM Management:** This node handles the output tensor pre-allocation efficiently. However, upscaling a long video batch to 4K still requires significant system RAM. If you hit OOM, try processing smaller batches or using `Keep Ratio` with a lower `megapixels` target.
 *   **Div32 Snapping:** Even in `Manual` or `Scale` modes, `divisible_by=32` can slightly adjust your dimensions. That is useful for some video VAEs, but it can avoid standard output sizes such as exact 4K.
 
+## CPU Batch Storage
+
+CPU output batches use the currently available RAM reported by `psutil`, not a fixed RAM cap. The node reserves 25% of total RAM on systems below 32 GiB (minimum 1 GiB), rising smoothly to an 8 GiB maximum reserve on larger systems. It uses disk-backed temporary storage only when allocating the complete output batch would cross that reserve. The check runs at allocation time rather than at ComfyUI startup, so it accounts for models and other workloads loaded after startup. GPU outputs retain their separate 8 GiB VRAM safety limit.
+
 ---
 *Note: This node requires the NVIDIA RTX Video SDK / Broadcast SDK to be installed on your system.*
