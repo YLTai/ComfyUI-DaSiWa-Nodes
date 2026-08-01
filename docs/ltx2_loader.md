@@ -2,7 +2,7 @@
 
 **Category:** `loaders/lora`  
 **Class name:** `DaSiWa_LTX2LoraLoader`  
-**File:** `nodes/ltx2_loader.py` · `js/ltx2_dynamic_ui.js`
+**File:** `nodes/nodes_ltx2_loader.py` · `js/ltx2_dynamic_ui.js`
 
 ---
 

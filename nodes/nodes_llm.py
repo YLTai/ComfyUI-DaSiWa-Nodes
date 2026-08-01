@@ -17,6 +17,10 @@ import torch
 from PIL import Image
 
 import folder_paths
+try:
+    from .helper_logging import log_dasiwa
+except ImportError:
+    from helper_logging import log_dasiwa
 
 
 _LLM_CACHE = {}
@@ -119,7 +123,7 @@ def _ensure_llm_folder():
         if hasattr(folder_paths, "add_model_folder_path"):
             folder_paths.add_model_folder_path("llm", llm_dir)
     except Exception as exc:
-        print(f"[DaSiWa LLM] Could not register models/llm folder: {exc}")
+        log_dasiwa("LLM Nodes", f"Could not register models/llm folder: {exc}")
     return llm_dir
 
 
@@ -211,7 +215,7 @@ def _resolve_hf_repo_path(hf_repo_id, hf_revision, download_if_missing):
     local_dir = os.path.join(_LLM_DIR, local_name)
     os.makedirs(local_dir, exist_ok=True)
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    print(f"[DaSiWa LLM] Downloading HF repo '{repo_id}' to {local_dir}")
+    log_dasiwa("LLM Nodes", f"Downloading HF repo '{repo_id}' to {local_dir}")
     snapshot_download(
         repo_id=repo_id,
         revision=(hf_revision or "main").strip() or "main",
@@ -456,7 +460,7 @@ def _load_transformers_model(config, need_vision):
             )
             tokenizer = getattr(processor, "tokenizer", None)
         except Exception as exc:
-            print(f"[DaSiWa LLM] AutoProcessor load failed, trying tokenizer only: {exc}")
+            log_dasiwa("LLM Nodes", f"AutoProcessor load failed, trying tokenizer only: {exc}")
 
     if tokenizer is None:
         tokenizer = AutoTokenizer.from_pretrained(
@@ -681,7 +685,7 @@ def _apply_chat_template(tokenizer_or_processor, messages, fallback_text):
     except TypeError:
         return template_fn(messages, add_generation_prompt=True)
     except Exception as exc:
-        print(f"[DaSiWa LLM] Chat template failed, using plain prompt: {exc}")
+        log_dasiwa("LLM Nodes", f"Chat template failed, using plain prompt: {exc}")
         return fallback_text
 
 

@@ -97,7 +97,7 @@ Additionally, updates are broadcast via WebSocket event `dasiwa.system_monitor` 
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Monitor shows "Loading..." | Backend route not registered | Ensure `nodes/system_monitor.py` is imported in `__init__.py` |
+| Monitor shows "Loading..." | Backend route not registered | Ensure `nodes/nodes_system_monitor.py` is imported in `__init__.py` |
 | No GPU metrics shown | Missing GPU query tool | Verify `nvidia-smi --query-gpu=index,name --format=csv` runs successfully |
 | Swap shows "n/a" | No swap configured | Normal behavior; indicates swap/pagefile is disabled |
 | Panel overlaps other toolbar items | Insufficient toolbar width | Lower-priority metrics auto-hide; check browser developer console for errors |

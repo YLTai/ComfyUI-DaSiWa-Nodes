@@ -12,6 +12,10 @@ import torch
 from PIL import Image
 
 import folder_paths
+try:
+    from .helper_logging import log_dasiwa
+except ImportError:
+    from helper_logging import log_dasiwa
 
 
 _CODEC_OPTIONS = ["Auto", "AV1", "VP9", "H.265 (HEVC)", "H.264"]
@@ -37,7 +41,7 @@ _MAX_FFMPEG_STDERR_BYTES = 4 * 1024 * 1024
 
 
 def _log(message):
-    print(f"[DaSiWa Enhanced Video Combine] {message}")
+    log_dasiwa("Enhanced Video Combine", message)
 
 
 def find_ffmpeg():

@@ -26,8 +26,14 @@ class _FolderPaths:
 
 
 sys.modules.setdefault("folder_paths", _FolderPaths())
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "enhanced_video_combine.py"
-spec = importlib.util.spec_from_file_location("enhanced_video_combine", MODULE_PATH)
+HELPER_PATH = Path(__file__).parents[1] / "nodes" / "helper_logging.py"
+helper_spec = importlib.util.spec_from_file_location("helper_logging", HELPER_PATH)
+assert helper_spec is not None and helper_spec.loader is not None
+helper_logging = importlib.util.module_from_spec(helper_spec)
+sys.modules["helper_logging"] = helper_logging
+helper_spec.loader.exec_module(helper_logging)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_enhanced_video_combine.py"
+spec = importlib.util.spec_from_file_location("nodes_enhanced_video_combine", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 enhanced_video_combine = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(enhanced_video_combine)
@@ -95,9 +101,9 @@ def test_node_schema_and_registration():
     assert "Animated WebP and Animated AVIF are manual image-animation outputs" in preview_source
     assert "onDrawForeground" in preview_source
     assert "isHelpIconHit" in preview_source
-    assert "ProgressBar(_encoded_frame_count(images, pingpong))" in (Path(__file__).parents[1] / "nodes" / "enhanced_video_combine.py").read_text(encoding="utf-8")
-    assert '"-progress", "pipe:2", "-nostats"' in (Path(__file__).parents[1] / "nodes" / "enhanced_video_combine.py").read_text(encoding="utf-8")
-    assert "now - last_report >= 0.5" in (Path(__file__).parents[1] / "nodes" / "enhanced_video_combine.py").read_text(encoding="utf-8")
+    assert "ProgressBar(_encoded_frame_count(images, pingpong))" in (Path(__file__).parents[1] / "nodes" / "nodes_enhanced_video_combine.py").read_text(encoding="utf-8")
+    assert '"-progress", "pipe:2", "-nostats"' in (Path(__file__).parents[1] / "nodes" / "nodes_enhanced_video_combine.py").read_text(encoding="utf-8")
+    assert "now - last_report >= 0.5" in (Path(__file__).parents[1] / "nodes" / "nodes_enhanced_video_combine.py").read_text(encoding="utf-8")
 
 
 

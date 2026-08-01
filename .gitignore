@@ -210,3 +210,6 @@ graphify-out
 
 # Local Hermes Agent state and plans
 .hermes/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/

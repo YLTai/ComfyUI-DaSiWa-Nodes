@@ -7,12 +7,38 @@ from pathlib import Path
 import torch
 
 
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "batch_output.py"
-spec = importlib.util.spec_from_file_location("batch_output", MODULE_PATH)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "helper_batch_output.py"
+spec = importlib.util.spec_from_file_location("helper_batch_output", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 batch_output = importlib.util.module_from_spec(spec)
-sys.modules["batch_output"] = batch_output
+sys.modules["helper_batch_output"] = batch_output
 spec.loader.exec_module(batch_output)
+
+LOGGING_PATH = Path(__file__).parents[1] / "nodes" / "helper_logging.py"
+logging_spec = importlib.util.spec_from_file_location("helper_logging", LOGGING_PATH)
+assert logging_spec is not None and logging_spec.loader is not None
+helper_logging = importlib.util.module_from_spec(logging_spec)
+sys.modules["helper_logging"] = helper_logging
+logging_spec.loader.exec_module(helper_logging)
+
+
+def test_log_dasiwa_writes_a_prefixed_comfyui_console_message(capsys):
+    helper_logging.log_dasiwa("Unit Test", "completed work.")
+
+    assert capsys.readouterr().out == "\033[38;5;136m[DaSiWa Unit Test]\033[0m completed work.\n"
+
+
+def test_log_startup_summary_reports_loaded_nodes_and_the_important_terms(capsys):
+    helper_logging.log_startup_summary(17)
+
+    messages = capsys.readouterr().out.splitlines()
+    assert len(messages) == 2
+    assert "[DaSiWa Nodes]" in messages[0]
+    assert "Loaded 17 extraordinarily overengineered nodes. 🐈" in messages[0]
+    assert "cat ears improve everything" in messages[1]
+    assert "SlimeGirls deserve rights" in messages[1]
+    assert "Dragoniods need more screen time" in messages[1]
+    assert "darkness is the correct light source" in messages[1]
 
 
 def test_uses_available_ram_not_a_fixed_output_cap(monkeypatch, tmp_path):

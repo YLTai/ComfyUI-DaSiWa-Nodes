@@ -25,6 +25,10 @@ except (ImportError, AttributeError):
     from comfy.sd import load_lora_for_models as _load_lora
 from aiohttp import web
 from server import PromptServer
+try:
+    from .helper_logging import log_dasiwa
+except ImportError:
+    from helper_logging import log_dasiwa
 
 NUM_SLOTS = 10
 
@@ -38,7 +42,7 @@ def _apply_slot(model, clip, lora_name, lora_str, vs, as_):
     """Apply a single LoRA slot to model and clip"""
     lora_path = folder_paths.get_full_path("loras", lora_name)
     if not lora_path or not os.path.isfile(lora_path):
-        print(f"[DaSiWa LTX2] LoRA not found: {lora_name}")
+        log_dasiwa("LTX-2 LoRA Loader", f"LoRA not found: {lora_name}")
         return model, clip
 
     weights = comfy.utils.load_torch_file(lora_path, safe_load=True)
@@ -49,7 +53,7 @@ def _apply_slot(model, clip, lora_name, lora_str, vs, as_):
     v_final = lora_str * vs
     a_final = lora_str * as_
 
-    print(f"[DaSiWa LTX2] '{lora_name}' V:{len(video_weights)}@{v_final:.2f}  A:{len(audio_weights)}@{a_final:.2f}")
+    log_dasiwa("LTX-2 LoRA Loader", f"'{lora_name}' V:{len(video_weights)}@{v_final:.2f}  A:{len(audio_weights)}@{a_final:.2f}")
 
     if video_weights and v_final != 0.0:
         model, clip = _load_lora(model, clip, video_weights, v_final, v_final)
@@ -121,7 +125,7 @@ class DaSiWa_LTX2LoraLoader:
         try:
             data = json.loads(stack_data)
         except Exception as e:
-            print(f"[DaSiWa LTX2] Failed to parse stack_data: {e}")
+            log_dasiwa("LTX-2 LoRA Loader", f"Failed to parse stack_data: {e}")
             return (m, c)
         
         for i, row in enumerate(data):

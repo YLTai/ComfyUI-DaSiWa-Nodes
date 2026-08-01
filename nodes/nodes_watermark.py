@@ -6,7 +6,8 @@ from PIL import Image
 from typing import Tuple
 import folder_paths
 import comfy.utils
-from .batch_output import allocate_cpu_output
+from .helper_batch_output import allocate_cpu_output
+from .helper_logging import log_dasiwa
 
 # --- Helpers ---
 
@@ -226,12 +227,12 @@ class DaSiWa_Watermark:
             pm_crop, a_crop = None, None
 
             num_fade_frames = max(1, int(B * fade_margin)) if fade else 1
-            print(
-                f"[DaSiWa Watermark] stable compositor: output={output_device.type}, "
-                f"dtype={output_dtype}, frames={B}"
+            log_dasiwa(
+                "Watermark",
+                f"stable compositor: output={output_device.type}, dtype={output_dtype}, frames={B}",
             )
             if mmap_path:
-                print(f"[DaSiWa Watermark] Disk-backed output: {mmap_path}")
+                log_dasiwa("Watermark", f"Disk-backed output: {mmap_path}")
 
             for i in range(B):
                 # Determine current position. Random mode starts at the selected position.

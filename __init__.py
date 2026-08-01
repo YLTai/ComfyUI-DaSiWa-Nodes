@@ -1,15 +1,17 @@
 if __package__:
-    from .nodes.scaling_nodes import DaSiWa_ResolutionScaleCalculator, DaSiWa_TorchResize
-    from .nodes.node_status_switch import DaSiWa_NodeStatusSwitch
-    from .nodes.rtx_upscaler_refiner import DaSiWa_RTX_UpscalerRefiner
-    from .nodes.metadata_nodes import DaSiWa_MetadataImageSaver, DaSiWa_MetadataImageSaverFull, DaSiWa_MetadataConfig, DaSiWa_CreateExtraMetadata
-    from .nodes.ltx2_loader import DaSiWa_LTX2LoraLoader
-    from .nodes.watermark_nodes import DaSiWa_Watermark
-    from .nodes.random_string_picker import DaSiWa_RandomStringPicker
-    from .nodes.wildcard_preset_prompt_builder import DaSiWa_WildcardPresetPromptBuilder
-    from .nodes.llm_nodes import DaSiWa_LLMModelSelector, DaSiWa_LLMAnalyze
-    from .nodes.enhanced_video_combine import DaSiWa_EnhancedVideoCombine
-    from .nodes import system_monitor
+    from .nodes.nodes_scaling import DaSiWa_ResolutionScaleCalculator, DaSiWa_TorchResize
+    from .nodes.nodes_status_switch import DaSiWa_NodeStatusSwitch
+    from .nodes.nodes_rtx_upscaler_refiner import DaSiWa_RTX_UpscalerRefiner
+    from .nodes.nodes_metadata import DaSiWa_MetadataImageSaver, DaSiWa_MetadataImageSaverFull, DaSiWa_MetadataConfig, DaSiWa_CreateExtraMetadata
+    from .nodes.nodes_ltx2_loader import DaSiWa_LTX2LoraLoader
+    from .nodes.nodes_watermark import DaSiWa_Watermark
+    from .nodes.nodes_random_string_picker import DaSiWa_RandomStringPicker
+    from .nodes.nodes_wildcard_preset_prompt_builder import DaSiWa_WildcardPresetPromptBuilder
+    from .nodes.nodes_llm import DaSiWa_LLMModelSelector, DaSiWa_LLMAnalyze
+    from .nodes.nodes_inpaint import DaSiWa_InpaintCropPrep, DaSiWa_InpaintComposite
+    from .nodes.nodes_enhanced_video_combine import DaSiWa_EnhancedVideoCombine
+    from .nodes import nodes_system_monitor
+    from .nodes.helper_logging import log_startup_summary
 
     NODE_CLASS_MAPPINGS = {
         "DaSiWa_ResolutionScaleCalculator": DaSiWa_ResolutionScaleCalculator,
@@ -27,6 +29,8 @@ if __package__:
         "DaSiWa_LLMModelSelector": DaSiWa_LLMModelSelector,
         "DaSiWa_LLMAnalyze": DaSiWa_LLMAnalyze,
         "DaSiWa_EnhancedVideoCombine": DaSiWa_EnhancedVideoCombine,
+        "DaSiWa_InpaintCropPrep": DaSiWa_InpaintCropPrep,
+        "DaSiWa_InpaintComposite": DaSiWa_InpaintComposite,
     }
 
     NODE_DISPLAY_NAME_MAPPINGS = {
@@ -45,7 +49,10 @@ if __package__:
         "DaSiWa_LLMModelSelector": "DaSiWa LLM Model Selector",
         "DaSiWa_LLMAnalyze": "DaSiWa LLM Analyze",
         "DaSiWa_EnhancedVideoCombine": "DaSiWa Enhanced Video Combine",
+        "DaSiWa_InpaintCropPrep": "DaSiWa Inpaint Crop Prep",
+        "DaSiWa_InpaintComposite": "DaSiWa Inpaint Composite",
     }
+    log_startup_summary(len(NODE_CLASS_MAPPINGS))
 else:
     NODE_CLASS_MAPPINGS = {}
     NODE_DISPLAY_NAME_MAPPINGS = {}

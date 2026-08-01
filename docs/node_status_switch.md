@@ -2,7 +2,7 @@
 
 **Category:** `DaSiWa/utils`  
 **Class name:** `DaSiWa_NodeStatusSwitch`  
-**File:** `nodes/node_status_switch.py` · `js/node_status_switch.js`
+**File:** `nodes/nodes_status_switch.py` · `js/node_status_switch.js`
 
 ---
 

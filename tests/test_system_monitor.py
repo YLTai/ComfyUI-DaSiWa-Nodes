@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.modules.setdefault("psutil", types.ModuleType("psutil"))
 
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "system_monitor.py"
-spec = importlib.util.spec_from_file_location("system_monitor", MODULE_PATH)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_system_monitor.py"
+spec = importlib.util.spec_from_file_location("nodes_system_monitor", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 system_monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(system_monitor)

@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "wildcard_preset_prompt_builder.py"
-spec = importlib.util.spec_from_file_location("wildcard_preset_prompt_builder", MODULE_PATH)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_wildcard_preset_prompt_builder.py"
+spec = importlib.util.spec_from_file_location("nodes_wildcard_preset_prompt_builder", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 wildcards = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wildcards)

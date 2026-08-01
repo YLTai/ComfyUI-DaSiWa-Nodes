@@ -2,7 +2,7 @@
 
 **Category:** `DaSiWa/Video`  
 **Class name:** `DaSiWa_Watermark`  
-**File:** `nodes/watermark_nodes.py`
+**File:** `nodes/nodes_watermark.py`
 
 ---
 

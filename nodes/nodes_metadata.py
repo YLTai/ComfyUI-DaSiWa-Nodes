@@ -7,6 +7,10 @@ from PIL import Image, PngImagePlugin
 from datetime import datetime
 import hashlib
 import folder_paths
+try:
+    from .helper_logging import log_dasiwa
+except ImportError:
+    from helper_logging import log_dasiwa
 
 # Global cache for model hashes to avoid re-calculating large files
 _MODEL_HASH_CACHE = {}
@@ -213,7 +217,7 @@ class DaSiWa_MetadataImageSaver:
                     prompt=None, extra_pnginfo=None, **kwargs):
 
         if images is None:
-            print("[DaSiWa] Metadata Image Saver: no images received; skipping save.")
+            log_dasiwa("Metadata Image Saver", "no images received; skipping save.")
             return {"ui": {"images": []}, "result": ("", "")}
 
         # Determine output directory and type based on save_output toggle
@@ -560,7 +564,7 @@ class DaSiWa_MetadataImageSaver:
                         for x in extra_pnginfo:
                             metadata.add_text(x, json.dumps(extra_pnginfo[x]))
                 except Exception as e:
-                    print(f"[DaSiWa] Warning: Failed to embed workflow metadata: {e}")
+                    log_dasiwa("Metadata Image Saver", f"Warning: Failed to embed workflow metadata: {e}")
             
             # 2. Civitai/A1111 Compatibility Field
             metadata.add_text("parameters", params)
@@ -598,7 +602,7 @@ class DaSiWa_MetadataImageSaver:
                                 exif[other_exif_tag] = f"{x}:{json.dumps(extra_pnginfo[x])}"
                                 other_exif_tag -= 1
                     except Exception as e:
-                        print(f"[DaSiWa] Warning: Failed to embed WebP workflow EXIF: {e}")
+                        log_dasiwa("Metadata Image Saver", f"Warning: Failed to embed WebP workflow EXIF: {e}")
 
                 img.save(file_path, quality=webp_quality, lossless=(webp_quality == 100), exif=exif)
             else:

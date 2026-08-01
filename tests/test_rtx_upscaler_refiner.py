@@ -12,14 +12,20 @@ import torch
 folder_paths = types.ModuleType("folder_paths")
 folder_paths.get_temp_directory = lambda: "/tmp"
 sys.modules.setdefault("folder_paths", folder_paths)
-HELPER_PATH = Path(__file__).parents[1] / "nodes" / "batch_output.py"
-helper_spec = importlib.util.spec_from_file_location("batch_output", HELPER_PATH)
+HELPER_PATH = Path(__file__).parents[1] / "nodes" / "helper_batch_output.py"
+helper_spec = importlib.util.spec_from_file_location("helper_batch_output", HELPER_PATH)
 assert helper_spec is not None and helper_spec.loader is not None
 batch_output = importlib.util.module_from_spec(helper_spec)
-sys.modules["batch_output"] = batch_output
+sys.modules["helper_batch_output"] = batch_output
 helper_spec.loader.exec_module(batch_output)
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "rtx_upscaler_refiner.py"
-spec = importlib.util.spec_from_file_location("rtx_upscaler_refiner", MODULE_PATH)
+LOGGING_PATH = Path(__file__).parents[1] / "nodes" / "helper_logging.py"
+logging_spec = importlib.util.spec_from_file_location("helper_logging", LOGGING_PATH)
+assert logging_spec is not None and logging_spec.loader is not None
+helper_logging = importlib.util.module_from_spec(logging_spec)
+sys.modules["helper_logging"] = helper_logging
+logging_spec.loader.exec_module(helper_logging)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_rtx_upscaler_refiner.py"
+spec = importlib.util.spec_from_file_location("nodes_rtx_upscaler_refiner", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 rtx_upscaler_refiner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rtx_upscaler_refiner)

@@ -2,7 +2,7 @@
 
 **Category:** `DaSiWa/Text`  
 **Class name:** `DaSiWa_RandomStringPicker`  
-**File:** `nodes/random_string_picker.py`
+**File:** `nodes/nodes_random_string_picker.py`
 
 ---
 

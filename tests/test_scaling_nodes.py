@@ -3,8 +3,8 @@ from pathlib import Path
 
 import torch
 
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "scaling_nodes.py"
-spec = importlib.util.spec_from_file_location("scaling_nodes", MODULE_PATH)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_scaling.py"
+spec = importlib.util.spec_from_file_location("nodes_scaling", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 scaling_nodes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scaling_nodes)

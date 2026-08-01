@@ -7,9 +7,11 @@ from typing import Tuple
 
 import folder_paths
 try:
-    from .batch_output import allocate_cpu_output, tensor_nbytes
+    from .helper_batch_output import allocate_cpu_output, tensor_nbytes
+    from .helper_logging import log_dasiwa
 except ImportError:
-    from batch_output import allocate_cpu_output, tensor_nbytes
+    from helper_batch_output import allocate_cpu_output, tensor_nbytes
+    from helper_logging import log_dasiwa
 
 # --- Constants ---
 
@@ -453,10 +455,11 @@ class DaSiWa_RTX_UpscalerRefiner:
             return (images[:, :, :, :3],)
 
         if upscale_enabled and target_width * target_height < source_width * source_height:
-            print(
-                "[DaSiWa RTX Upscaler & Refiner] Warning: target resolution "
+            log_dasiwa(
+                "RTX Upscaler & Refiner",
+                "Warning: target resolution "
                 f"{target_width}x{target_height} is smaller than input "
-                f"{source_width}x{source_height}. This will downscale the source and can look softer."
+                f"{source_width}x{source_height}. This will downscale the source and can look softer.",
             )
 
         vfx_api = _import_vfx()
@@ -470,14 +473,14 @@ class DaSiWa_RTX_UpscalerRefiner:
         out_dtype = images.dtype
         output_shape = (batch_size, target_height, target_width, 3)
         projected_bytes = _projected_output_bytes(batch_size, target_width, target_height, out_dtype)
-        print(
-            "[DaSiWa RTX Upscaler & Refiner] "
+        log_dasiwa(
+            "RTX Upscaler & Refiner",
             f"Input={source_width}x{source_height}, target={target_width}x{target_height}, "
-            f"frames={batch_size}, output={projected_bytes / 1024 ** 3:.2f} GiB."
+            f"frames={batch_size}, output={projected_bytes / 1024 ** 3:.2f} GiB.",
         )
         out, mmap_path = _allocate_output_tensor(output_shape, out_dtype, out_device)
         if mmap_path:
-            print(f"[DaSiWa RTX Upscaler & Refiner] Disk-backed output: {mmap_path}")
+            log_dasiwa("RTX Upscaler & Refiner", f"Disk-backed output: {mmap_path}")
 
         with torch.cuda.device(cuda_device), torch.inference_mode():
             # Pass 1: Denoise

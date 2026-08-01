@@ -9,10 +9,16 @@ folder_paths.models_dir = "/tmp/comfy-models"
 folder_paths.add_model_folder_path = lambda *_: None
 folder_paths.get_folder_paths = lambda _: [folder_paths.models_dir]
 folder_paths.get_full_path = lambda *_: None
-sys.modules.setdefault("folder_paths", folder_paths)
+sys.modules["folder_paths"] = folder_paths
 
-MODULE_PATH = Path(__file__).parents[1] / "nodes" / "llm_nodes.py"
-spec = importlib.util.spec_from_file_location("llm_nodes", MODULE_PATH)
+HELPER_PATH = Path(__file__).parents[1] / "nodes" / "helper_logging.py"
+helper_spec = importlib.util.spec_from_file_location("helper_logging", HELPER_PATH)
+assert helper_spec is not None and helper_spec.loader is not None
+helper_logging = importlib.util.module_from_spec(helper_spec)
+sys.modules["helper_logging"] = helper_logging
+helper_spec.loader.exec_module(helper_logging)
+MODULE_PATH = Path(__file__).parents[1] / "nodes" / "nodes_llm.py"
+spec = importlib.util.spec_from_file_location("nodes_llm", MODULE_PATH)
 assert spec is not None and spec.loader is not None
 llm_nodes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(llm_nodes)
