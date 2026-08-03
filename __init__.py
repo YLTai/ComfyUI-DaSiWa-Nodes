@@ -10,6 +10,8 @@ if __package__:
     from .nodes.nodes_llm import DaSiWa_LLMModelSelector, DaSiWa_LLMAnalyze
     from .nodes.nodes_inpaint import DaSiWa_InpaintCropPrep, DaSiWa_InpaintComposite
     from .nodes.nodes_enhanced_video_combine import DaSiWa_EnhancedVideoCombine
+    from .nodes.nodes_minimax_h3_director import MiniMaxH3Director
+    from .nodes.nodes_minimax_h3_director_guide import MiniMaxH3DirectorGuide
     from .nodes import nodes_system_monitor
     from .nodes.helper_logging import log_startup_summary
 
@@ -31,6 +33,8 @@ if __package__:
         "DaSiWa_EnhancedVideoCombine": DaSiWa_EnhancedVideoCombine,
         "DaSiWa_InpaintCropPrep": DaSiWa_InpaintCropPrep,
         "DaSiWa_InpaintComposite": DaSiWa_InpaintComposite,
+        "MiniMaxH3Director": MiniMaxH3Director,
+        "MiniMaxH3DirectorGuide": MiniMaxH3DirectorGuide,
     }
 
     NODE_DISPLAY_NAME_MAPPINGS = {
@@ -51,6 +55,8 @@ if __package__:
         "DaSiWa_EnhancedVideoCombine": "DaSiWa Enhanced Video Combine",
         "DaSiWa_InpaintCropPrep": "DaSiWa Inpaint Crop Prep",
         "DaSiWa_InpaintComposite": "DaSiWa Inpaint Composite",
+        "MiniMaxH3Director": "MiniMax H3 Director",
+        "MiniMaxH3DirectorGuide": "MiniMax H3 Director Guide",
     }
     log_startup_summary(len(NODE_CLASS_MAPPINGS))
 else:

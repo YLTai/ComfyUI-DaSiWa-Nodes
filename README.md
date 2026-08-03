@@ -4,6 +4,20 @@ A high-performance collection of custom nodes for ComfyUI, optimized for video w
 
 ## Included Nodes
 
+### 🎬 MiniMax H3 Director
+
+Timeline-based authoring for MiniMax H3 text/image/video generation and reference-to-video workflows, integrated with ComfyUI's native H3 implementation.
+
+![MiniMax H3 Director](assets/DaSiWa-MiniMaxH3-Director.png)
+
+- **Two modes:** FL2VA for text/endpoint frames; REF2VA for multi-image, video, and audio references.
+- **Reference control:** reorder media, trim clips, pair video soundtracks, assign per-reference prompts, and keep a global prompt.
+- **Validated limits:** 9 images, 3 videos, 3 audio clips, 12 files; 2–15 second references and 15-second visual/audio totals.
+- **Native routing:** emits validated conditioning/latent inputs through the installed ComfyUI H3 nodes; lazy-loads only the selected mode's model.
+- **Prompting:** deterministic prompt assembly with compact camera/action/timing/audio guidance.
+
+[Full documentation and prompting guide →](docs/minimax_h3_director.md)
+
 
 ---
 
