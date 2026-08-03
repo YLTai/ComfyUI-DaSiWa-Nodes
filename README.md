@@ -106,18 +106,20 @@ The **DaSiWa Metadata Image Saver** ensures your images are fully compatible wit
 
 ### 🎞️ Enhanced Video Combine
 
-The **DaSiWa Enhanced Video Combine** turns an `IMAGE` batch into a high-quality video with optional ComfyUI `AUDIO` muxing, an in-node VHS-style preview, and a set of enhanced automations that choose safe output settings instead of relying on a fixed encoder setup.
+Converts an `IMAGE` batch into a high-quality video with optional `AUDIO` muxing and an in-node VHS-style preview.
 
 ![DaSiWa Enhanced Video Combine](assets/DaSiWa-Enhanced-Video-Combine.png)
 
-- **Host-aware encoding automation:** `Auto` now tests browser-compatible 8-bit AV1/WebM first, then VP9, then H.264; H.265/HEVC is excluded from Auto and must be chosen explicitly. Every candidate prefers NVIDIA NVENC, then other GPU encoders (Intel QSV, AMD AMF, VAAPI), then software.
-- **Container and codec safety automation:** Chooses compatible WebM/MKV/MP4 combinations per codec and retains a mandatory H.264/MP4 fallback if every preferred combination fails.
-- **Precision and preview automation:** Detects 8-bit versus 10-bit source-frame precision. Chromium on Linux can falsely report AV1/HEVC support while rendering 10-bit hardware streams as black; to avoid this, the node streams an FFmpeg-transcoded fragmented H.264 HTTP response for AV1 and H.265 outputs instead of relying on native decoders. No preview sidecar is written.
-- **Animated-image outputs:** Select Animated AVIF or Animated WebP explicitly for looping image output without audio. Animated AVIF prefers GPU AV1 encoding (`av1_nvenc`, then other hardware encoders) and safely falls back to software; Animated WebP uses its required CPU `libwebp_anim` encoder.
-- **Asset-panel frame automation:** Enable **Save first frame** and/or **Save last frame** to write PNGs next to the video with matching names and publish the video plus each generated PNG to ComfyUI Assets.
-- **Audio controls and preview behavior:** Mux connected audio, select audio codec/bitrate, optionally crop the video to audio duration, and hover the in-node preview to unmute it automatically.
-- **Concise diagnostics:** Always writes compact ComfyUI CLI logs for codec/container selection, the actual video encoder, and the resolved audio encoder/bitrate (for example, `audio=libopus/192k`), plus output path and relevant fallbacks—without a logging toggle.
-- **Built-in help:** Click the small `?` at the right side of the node title for a concise setting reference.
+- **Codecs:** Auto (AV1 → VP9 → H.264), or explicit AV1 / VP9 / H.264 / H.265(HEVC). Hardware-first encoder chain (NVENC → QSV → AMF → VAAPI → software); mandatory H.264/MP4 fallback.
+- **Containers:** Auto-selects per codec (WebM/MKV/MP4 for AV1/VP9; MP4/MKV for H.264/H.265).
+- **Animated images:** Animated AVIF (GPU AV1 or software) and Animated WebP (`libwebp_anim`). Looping, no audio.
+- **Bit depth & quality:** Auto-detects 8-bit vs 10-bit source precision; Auto codec forces 8-bit 4:2:0. CRF/CQ-based quality slider (default 20).
+- **Audio muxing:** Opus/AAC/MP3 selectable; Auto uses Opus (WebM) or AAC (MKV/MP4). Bitrates 64–320k. Optional crop-to-audio.
+- **In-node preview:** Framed player with native hover-reveal controls and hover-to-unmute audio. Streamed H.264 transcoding for AV1/H.265 where needed.
+- **Frame exports:** Save first/last frame as PNG alongside the video; all assets published to ComfyUI Assets.
+- **Ping-pong mode:** Forward/reverse frame loop.
+- **Workflow metadata:** Embed prompt/workflow JSON where supported.
+- **Logging:** Compact CLI output with codec/container/encoder decisions and resolved audio settings. Built-in `?` help dialog.
 
 [Full documentation →](docs/enhanced_video_combine.md)
 
