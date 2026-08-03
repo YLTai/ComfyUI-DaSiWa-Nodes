@@ -21,11 +21,11 @@ function transcodedVideoUrl(video) {
     return api.apiURL(`/dasiwa/enhanced-video-preview?${params}`);
 }
 
+const NATIVE_BROWSER_VIDEO = new Set(["AV1|WebM|8", "VP9|WebM|8", "H.264|MP4|8"]);
+
 function shouldUseTranscodedPreview(video) {
-    // Chromium may report AV1/HEVC support but render 10-bit hardware-encoded
-    // streams black without firing a media error. Use our known-good H.264
-    // stream for these output codecs instead of relying on that decoder path.
-    return ["AV1", "H.265 (HEVC)"].includes(video.codec);
+    const key = `${video.codec}|${video.container}|${video.bit_depth ?? 8}`;
+    return !NATIVE_BROWSER_VIDEO.has(key);
 }
 
 function stopNodeInteraction(element) {
@@ -46,6 +46,15 @@ function hideLegacyLogLevelWidget(node) {
     if (!widget) return;
     widget.draw = () => {};
     widget.computeSize = () => [0, -4];
+}
+
+function hideFrameExportWidgets(node) {
+    for (const name of ["save_first_frame", "save_last_frame"]) {
+        const widget = node.widgets?.find((widget) => widget.name === name);
+        if (!widget) continue;
+        widget.draw = () => {};
+        widget.computeSize = () => [0, -4];
+    }
 }
 
 function formatTime(seconds) {
@@ -72,7 +81,7 @@ function showHelpDialog() {
             <dt><b>image animation</b></dt><dd>Animated WebP and Animated AVIF are manual image-animation outputs. They are excluded from Auto codec/container selection, ignore the codec choice, and omit connected audio.</dd>
             <dt><b>bit depth / quality</b></dt><dd>With an explicit codec, Auto bit depth detects 8- or 10-bit frame precision; codec Auto uses browser-compatible 8-bit output. Lower quality values retain more detail and create larger files.</dd>
             <dt><b>audio</b></dt><dd>Connect AUDIO to mux it. Choose Auto, AAC, Opus, or MP3 plus a target bitrate; Auto uses Opus for WebM and AAC for MKV/MP4. Crop to audio ends video at the audio duration. Preview sound is on only while the pointer is over the video.</dd>
-            <dt><b>preview</b></dt><dd>Unsupported browser codecs are transcoded to a temporary H.264 response while streaming; no preview sidecar is written.</dd>
+            <dt><b>preview</b></dt><dd>The native output is used when the browser supports it. Unsupported outputs are transcoded to a temporary H.264 response while streaming; no preview sidecar is written.</dd>
             <dt><b>other</b></dt><dd>Ping-pong reverses interior frames for a loop. Save metadata embeds the ComfyUI workflow. Pass frames keeps frames available downstream.</dd>
         </dl>`;
     document.body.append(dialog);
@@ -96,6 +105,7 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             const result = originalOnNodeCreated ? originalOnNodeCreated.apply(this, arguments) : undefined;
             hideLegacyLogLevelWidget(this);
+            hideFrameExportWidgets(this);
             const previewNode = this;
             const originalOnDrawForeground = this.onDrawForeground;
             const originalOnMouseDown = this.onMouseDown;
@@ -168,7 +178,15 @@ app.registerExtension({
             const autoPlayLabel = document.createElement("label");
             autoPlayLabel.style.cssText = "display:flex;align-items:center;gap:3px;margin-left:auto;white-space:nowrap;cursor:pointer";
             autoPlayLabel.append(autoPlay, " Autoplay");
-            actions.append(saveFirstFrameLabel, saveLastFrameLabel, autoPlayLabel);
+            const download = document.createElement("a");
+            download.textContent = "Download";
+            download.href = "#";
+            download.download = "video";
+            download.style.cssText = "padding:2px 7px;color:inherit;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:3px;text-decoration:none;cursor:pointer";
+            download.addEventListener("click", (event) => {
+                if (download.href.endsWith("#")) event.preventDefault();
+            });
+            actions.append(saveFirstFrameLabel, saveLastFrameLabel, autoPlayLabel, download);
 
             preview.addEventListener("loadedmetadata", () => {
                 previewWidget.aspectRatio = preview.videoWidth / preview.videoHeight;
@@ -193,6 +211,22 @@ app.registerExtension({
                 duration.textContent = "";
                 fps.textContent = "";
             });
+            let silentPlaybackTimer;
+            const clearSilentPlaybackTimer = () => {
+                if (silentPlaybackTimer) clearTimeout(silentPlaybackTimer);
+                silentPlaybackTimer = undefined;
+            };
+            preview.addEventListener("timeupdate", clearSilentPlaybackTimer);
+            preview.addEventListener("playing", () => {
+                clearSilentPlaybackTimer();
+                silentPlaybackTimer = setTimeout(() => {
+                    if (preview.currentTime === 0 && preview.dataset.fallback !== "1") {
+                        preview.dataset.fallback = "1";
+                        preview.src = transcodedVideoUrl({ filename: preview.dataset.filename, subfolder: preview.dataset.subfolder, type: preview.dataset.type });
+                        preview.load();
+                    }
+                }, 2500);
+            });
             preview.addEventListener("mouseenter", () => {
                 preview.muted = false;
             });
@@ -200,7 +234,7 @@ app.registerExtension({
                 preview.muted = true;
             });
             preview.addEventListener("dblclick", (event) => event.preventDefault());
-            [preview, info, actions, saveFirstFrame, saveFirstFrameLabel, saveLastFrame, saveLastFrameLabel, autoPlay, autoPlayLabel].forEach(stopNodeInteraction);
+            [preview, info, actions, saveFirstFrame, saveFirstFrameLabel, saveLastFrame, saveLastFrameLabel, autoPlay, autoPlayLabel, download].forEach(stopNodeInteraction);
 
             root.append(preview, info, actions);
             const previewHeight = () => (previewNode.size[0] - 20) / (previewWidget?.aspectRatio ?? 16 / 9) + 110;
@@ -231,13 +265,20 @@ app.registerExtension({
             preview.dataset.type = video.type || "output";
             preview.dataset.fps = video.fps ?? "";
             preview.dataset.fallback = "0";
+            preview.dataset.codec = video.codec || "";
+            const originalUrl = videoUrl(video);
+            const download = preview.parentElement.querySelector("a");
+            if (download) {
+                download.href = originalUrl;
+                download.download = video.filename;
+            }
             if (video.width && video.height) {
                 this.dasiwaVideoPreviewWidget.aspectRatio = video.width / video.height;
                 preview.parentElement.style.aspectRatio = String(this.dasiwaVideoPreviewWidget.aspectRatio);
             }
             // Prefer native playback (including browsers with HEVC support). If
             // decoding fails, the error handler switches once to FFmpeg streaming.
-            preview.src = shouldUseTranscodedPreview(video) ? transcodedVideoUrl(video) : videoUrl(video);
+            preview.src = shouldUseTranscodedPreview(video) ? transcodedVideoUrl(video) : originalUrl;
             preview.load();
             return result;
         };

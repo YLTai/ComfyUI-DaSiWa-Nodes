@@ -64,16 +64,21 @@ def test_node_schema_and_registration():
     assert controls["audio_bitrate"][1]["default"] == "192k"
     assert "hideLegacyLogLevelWidget" in preview_source
     assert 'widget.name === "log_level"' in preview_source
+    assert "hideFrameExportWidgets(this);" in preview_source
+    assert 'for (const name of ["save_first_frame", "save_last_frame"])' in preview_source
     assert "DaSiWa_EnhancedVideoCombine" in package_source
     assert 'name: "DaSiWa.EnhancedVideoCombinePreview"' in preview_source
     assert "this.addDOMWidget" in preview_source
     assert "message?.gifs?.[0] ?? message?.videos?.[0]" in preview_source
     assert "function saveFrame" not in preview_source
     assert "link.download" not in preview_source
+    assert "download.download" in preview_source
     assert "previewWidget.aspectRatio = 16 / 9;" in preview_source
     assert "transcodedVideoUrl" in preview_source
     assert "function shouldUseTranscodedPreview(video)" in preview_source
-    assert 'return ["AV1", "H.265 (HEVC)"].includes(video.codec);' in preview_source
+    assert '"AV1|WebM|8"' in preview_source
+    assert '"VP9|WebM|8"' in preview_source
+    assert '"H.264|MP4|8"' in preview_source
     assert "getHeight: () => previewHeight()," in preview_source
     assert "node.setSize([node.size[0], node.computeSize([node.size[0], node.size[1]])[1]]);" in preview_source
     assert "video.fps" in preview_source
@@ -94,7 +99,7 @@ def test_node_schema_and_registration():
     assert "syncBooleanWidget" in preview_source
     assert 'syncBooleanWidget(this, "save_first_frame", saveFirstFrame.checked)' in preview_source
     assert 'syncBooleanWidget(this, "save_last_frame", saveLastFrame.checked)' in preview_source
-    assert "actions.append(saveFirstFrameLabel, saveLastFrameLabel, autoPlayLabel)" in preview_source
+    assert "actions.append(saveFirstFrameLabel, saveLastFrameLabel, autoPlayLabel, download)" in preview_source
     assert 'autoPlay.type = "checkbox"' in preview_source
     assert "autoPlay.checked = true;" in preview_source
     assert 'autoPlayLabel.append(autoPlay, " Autoplay")' in preview_source
@@ -112,7 +117,10 @@ def test_node_schema_and_registration():
     assert "this.dasiwaVideoPreviewWidget.aspectRatio" in on_executed_source
     assert "preview.addEventListener(\"error\"" in preview_source
     assert "Preview unavailable (FFmpeg or browser decoder missing)" in preview_source
-    assert "preview.src = shouldUseTranscodedPreview(video) ? transcodedVideoUrl(video) : videoUrl(video);" in on_executed_source
+    assert "const originalUrl = videoUrl(video);" in on_executed_source
+    assert "preview.src = shouldUseTranscodedPreview(video) ? transcodedVideoUrl(video) : originalUrl;" in on_executed_source
+    assert 'download.textContent = "Download"' in preview_source
+    assert "download.download = video.filename;" in on_executed_source
     assert "function showHelpDialog()" in preview_source
     assert "Enhanced Video Combine Help" in preview_source
     assert "Animated WebP and Animated AVIF are manual image-animation outputs" in preview_source
@@ -409,7 +417,7 @@ def test_output_and_selected_frame_exports_are_published_to_comfyui_assets(tmp_p
     )
 
     assert result["ui"]["images"] == [
-        {"filename": "asset-video_00001.mp4", "subfolder": "", "type": "output", "format": "video/mp4", "width": 6, "height": 4},
+        {"filename": "asset-video_00001.mp4", "subfolder": "", "type": "output", "format": "video/mp4", "width": 6, "height": 4, "codec": "H.264", "bit_depth": 8, "container": "MP4"},
         {"filename": "asset-video_00001-first-frame.png", "subfolder": "", "type": "output", "format": "image/png", "width": 6, "height": 4},
         {"filename": "asset-video_00001-last-frame.png", "subfolder": "", "type": "output", "format": "image/png", "width": 6, "height": 4},
     ]
@@ -438,6 +446,8 @@ def test_hevc_output_uses_original_asset_for_streaming_browser_preview(tmp_path,
         "type": "output",
         "format": "video/mp4",
         "codec": "H.265 (HEVC)",
+        "bit_depth": 8,
+        "container": "MP4",
         "width": 6,
         "height": 4,
         "fps": 24.0,
