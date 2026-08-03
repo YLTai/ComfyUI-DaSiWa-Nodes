@@ -4,6 +4,7 @@ A high-performance collection of custom nodes for ComfyUI, optimized for video w
 
 ## Included Nodes
 
+
 ---
 
 ### 💎 RTX Upscaler & Refiner
@@ -68,12 +69,15 @@ The **DaSiWa Node Status Switch** lets you mute or bypass any node in your workf
 
 ---
 
-### 🎬 LTX-2 Lora Loader
+### 🎬 Advanced LoRA Loader
 
-The **DaSiWa LTX-2 Lora Loader** is a 10-slot LoRA stacker designed for LTX-2.3 video generation. LTX-2.3 is unique because it generates both video and audio from separate transformer branches. This node gives you independent control over how LoRAs affect video vs. audio.
+The **DaSiWa Advanced LoRA Loader** is a 10-slot stacker for ordinary image/video LoRAs and LTX-2.3. In **Basic mode**, it loads the complete LoRA map, so it is compatible with standard image and video models. Its `VIS` control means **visual strength**: it affects the whole LoRA map in Basic mode, including image models. LTX-2.3 additionally supports independent audio separation.
 
-- **Dual-Branch Control:** Adjust video (V×) and audio (A×) multipliers independently per LoRA.
-- **10 LoRA Slots:** Stack up to 10 LoRAs with fine-grained strength control (STR: −2.0 to +2.0).
+- **Model Modes:** Select Basic for universal image/video compatibility, LTX-2.3 for separate visual/audio branches, or the safe MiniMax H3 prepared mode.
+- **Visual Control:** `STR × VIS` is the effective visual strength. In Basic mode, `VIS` controls the complete LoRA map; it is not video-only.
+- **Dual-Branch Control:** LTX-2.3 can adjust visual (`VIS×`) and audio (`A×`) multipliers independently per LoRA.
+- **10 LoRA Slots:** Stack up to 10 LoRAs with fine-grained strength control (STR: −5.0 to +5.0).
+- **Toggle All:** The `ALL` header button enables every slot; when all slots are enabled, it disables every slot.
 - **Key Count Indicator:** Auto-scans each LoRA to show video/audio key counts before generation.
 - **6 Themes:** Switch between Jade, Neon, Studio, Chrome, OLED, and Wood color schemes.
 - **Searchable UI:** Quick LoRA search with live filtering in the node itself.
@@ -106,9 +110,9 @@ The **DaSiWa Enhanced Video Combine** turns an `IMAGE` batch into a high-quality
 
 ![DaSiWa Enhanced Video Combine](assets/DaSiWa-Enhanced-Video-Combine.png)
 
-- **Enhanced host-aware encoding automation:** `Auto` runtime-tests AV1 → H.265/HEVC → VP9 → H.264 and selects the first encoder that actually works on the host, preferring NVIDIA NVENC, then other GPU encoders (Intel QSV, AMD AMF, VAAPI), then software.
+- **Enhanced host-aware encoding automation:** `Auto` prefers browser-compatible 8-bit AV1/WebM, then VP9 and H.264 fallbacks; H.265/HEVC remains explicit-only. Every candidate prefers NVIDIA NVENC, then other GPU encoders (Intel QSV, AMD AMF, VAAPI), then software.
 - **Enhanced container and codec safety automation:** Chooses compatible WebM/MKV/MP4 combinations per codec and retains a mandatory H.264/MP4 fallback if every preferred combination fails.
-- **Enhanced precision and preview automation:** Detects 8-bit versus 10-bit source-frame precision; H.265 keeps its requested final output while an H.264 sidecar is generated automatically for browsers without HEVC playback.
+- **Enhanced precision and preview automation:** Detects 8-bit versus 10-bit source-frame precision; unsupported browser codecs are preview-transcoded with FFmpeg as an HTTP stream without writing a sidecar.
 - **Enhanced output automation:** The node always re-encodes when queued, supports ping-pong loops, preserves optional workflow metadata, and names audio outputs with `-audio`.
 - **Animated-image outputs:** Select Animated AVIF or Animated WebP explicitly for looping image output without audio. Animated AVIF prefers GPU AV1 encoding (`av1_nvenc`, then other hardware encoders) and safely falls back to software; Animated WebP uses its required CPU `libwebp_anim` encoder.
 - **Asset-panel frame automation:** Enable **Save first frame** and/or **Save last frame** to write PNGs next to the video with matching names and publish the video plus each generated PNG to ComfyUI Assets.

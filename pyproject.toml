@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-DaSiWa-Nodes"
 description = "DaSiWa Custom Nodes Collection"
-version = "0.3.6"
+version = "0.3.7"
 license = {file = "LICENSE"}
 dependencies = [
     "torch",
@@ -26,3 +26,4 @@ Icon = "https://avatars.githubusercontent.com/u/84453554"
 
 [tool.pytest.ini_options]
 testpaths = [".tests"]
+pythonpath = ["."]

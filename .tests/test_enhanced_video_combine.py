@@ -71,14 +71,26 @@ def test_node_schema_and_registration():
     assert "function saveFrame" not in preview_source
     assert "link.download" not in preview_source
     assert "previewWidget.aspectRatio = 16 / 9;" in preview_source
-    assert "requestAnimationFrame(() => fitPreviewHeight(previewNode));" in preview_source
+    assert "transcodedVideoUrl" in preview_source
+    assert "function shouldUseTranscodedPreview(video)" in preview_source
+    assert 'return ["AV1", "H.265 (HEVC)"].includes(video.codec);' in preview_source
     assert "getHeight: () => previewHeight()," in preview_source
-    assert "Math.max(node.size[1], requiredSize[1])" in preview_source
+    assert "node.setSize([node.size[0], node.computeSize([node.size[0], node.size[1]])[1]]);" in preview_source
     assert "video.fps" in preview_source
     assert '"Video preview"' not in preview_source
-    assert "preview.controls = true" not in preview_source
+    assert "preview.controls = true;" in preview_source
+    assert "preview.controls = false;" not in preview_source
+    assert 'preview.controlsList = "nodownload nofullscreen noremoteplayback";' in preview_source
+    assert "preview.disablePictureInPicture = true;" in preview_source
+    assert 'preview.style.cssText = "display:block;width:100%;background:#111;cursor:pointer";' in preview_source
+    assert "const videoFrame = document.createElement" not in preview_source
     assert "previewWidget.aspectRatio = preview.videoWidth / preview.videoHeight" in preview_source
     assert "fitPreviewHeight(previewNode)" in preview_source
+    assert "const previewWidth" not in preview_source
+    assert "const previewHeight" in preview_source
+    assert "aspect-ratio:16/9" not in preview_source
+    assert "this.onResize = function (size)" not in preview_source
+    assert "this.setSize([size[0], Math.max(1, size[1] + heightDelta)])" not in preview_source
     assert "syncBooleanWidget" in preview_source
     assert 'syncBooleanWidget(this, "save_first_frame", saveFirstFrame.checked)' in preview_source
     assert 'syncBooleanWidget(this, "save_last_frame", saveLastFrame.checked)' in preview_source
@@ -86,16 +98,21 @@ def test_node_schema_and_registration():
     assert 'autoPlay.type = "checkbox"' in preview_source
     assert "autoPlay.checked = true;" in preview_source
     assert 'autoPlayLabel.append(autoPlay, " Autoplay")' in preview_source
-    assert 'autoPlayLabel.style.marginLeft = "auto"' in preview_source
+    assert 'margin-left:auto' in preview_source
     assert "if (autoPlay.checked) preview.play().catch(() => {});" in preview_source
-    assert 'preview.addEventListener("click", togglePlayback)' in preview_source
-    assert 'preview.addEventListener("mouseenter", () => { preview.muted = false; });' in preview_source
-    assert 'preview.addEventListener("mouseleave", () => { preview.muted = true; });' in preview_source
+    assert 'preview.addEventListener("mouseenter"' in preview_source
+    assert 'preview.addEventListener("mouseleave"' in preview_source
+    assert 'preview.addEventListener("dblclick", (event) => event.preventDefault())' in preview_source
+    assert "const controls = document.createElement" not in preview_source
     assert "const mute = document.createElement" not in preview_source
 
     assert 'preview.dataset.filename = video.filename' in preview_source
+    assert "this.dasiwaVideoPreviewWidget = previewWidget;" in preview_source
+    on_executed_source = preview_source.split("nodeType.prototype.onExecuted", 1)[1]
+    assert "this.dasiwaVideoPreviewWidget.aspectRatio" in on_executed_source
     assert "preview.addEventListener(\"error\"" in preview_source
-    assert "H.265/HEVC playback is not supported by this browser" in preview_source
+    assert "Preview unavailable (FFmpeg or browser decoder missing)" in preview_source
+    assert "preview.src = shouldUseTranscodedPreview(video) ? transcodedVideoUrl(video) : videoUrl(video);" in on_executed_source
     assert "function showHelpDialog()" in preview_source
     assert "Enhanced Video Combine Help" in preview_source
     assert "Animated WebP and Animated AVIF are manual image-animation outputs" in preview_source
@@ -201,9 +218,17 @@ def test_encoder_priority_prefers_nvenc_then_other_hardware_then_software():
     assert enhanced_video_combine._ENCODER_NAMES["VP9"] == ("vp9_qsv", "vp9_vaapi", "libvpx-vp9")
 
 
-def test_auto_codec_tries_av1_then_hevc_then_vp9_then_h264():
-    assert enhanced_video_combine._codec_candidates("Auto") == ("AV1", "H.265 (HEVC)", "VP9", "H.264")
+def test_auto_codec_prioritizes_av1_then_browser_compatible_fallbacks():
+    assert enhanced_video_combine._codec_candidates("Auto") == ("AV1", "VP9", "H.264")
     assert enhanced_video_combine._codec_candidates("H.264") == ("H.264",)
+
+
+def test_auto_codec_forces_eight_bit_browser_compatible_output():
+    images = torch.tensor([0, 256, 511, 1023], dtype=torch.float32).reshape(1, 2, 2, 1).repeat(1, 1, 1, 3) / 1023
+
+    assert enhanced_video_combine._selected_bit_depth("Auto", "Auto", images) == 8
+    assert enhanced_video_combine._selected_bit_depth("H.264", "Auto", images) == 10
+    assert enhanced_video_combine._selected_bit_depth("Auto", "10-bit", images) == 10
 
 
 def test_auto_container_prioritizes_webm_then_mkv_then_mp4_for_av1_and_vp9():
@@ -213,6 +238,13 @@ def test_auto_container_prioritizes_webm_then_mkv_then_mp4_for_av1_and_vp9():
     assert enhanced_video_combine._container_candidates("H.265 (HEVC)", "MKV") == ("MKV",)
     assert "Animated WebP" not in enhanced_video_combine._container_candidates("AV1", "Auto")
     assert "Animated AVIF" not in enhanced_video_combine._container_candidates("AV1", "Auto")
+
+
+def test_browser_compatible_auto_containers_exclude_mkv():
+    assert enhanced_video_combine._auto_container_candidates("AV1", "Auto") == ("WebM",)
+    assert enhanced_video_combine._auto_container_candidates("VP9", "Auto") == ("WebM",)
+    assert enhanced_video_combine._auto_container_candidates("H.264", "Auto") == ("MP4",)
+    assert enhanced_video_combine._auto_container_candidates("AV1", "MKV") == ("MKV",)
 
 
 def test_animated_image_outputs_are_manual_only_and_use_dedicated_encoders():
@@ -306,6 +338,11 @@ def test_audio_fallbacks_are_container_compatible():
     assert enhanced_video_combine._audio_encoder_candidates("Auto", "MKV") == ("aac", "libopus", "libmp3lame", "pcm_s16le")
 
 
+def test_legacy_boolean_audio_codec_uses_auto_selection():
+    assert enhanced_video_combine._audio_encoder_candidates(True, "MP4") == ("aac", "libmp3lame")
+    assert enhanced_video_combine._audio_encoder_candidates(False, "WebM") == ("libopus",)
+
+
 def test_audio_encode_falls_back_when_requested_encoder_fails(monkeypatch):
     captured = []
 
@@ -376,6 +413,35 @@ def test_output_and_selected_frame_exports_are_published_to_comfyui_assets(tmp_p
         {"filename": "asset-video_00001-first-frame.png", "subfolder": "", "type": "output", "format": "image/png", "width": 6, "height": 4},
         {"filename": "asset-video_00001-last-frame.png", "subfolder": "", "type": "output", "format": "image/png", "width": 6, "height": 4},
     ]
+
+
+def test_hevc_output_uses_original_asset_for_streaming_browser_preview(tmp_path, monkeypatch):
+    encode_calls = []
+    monkeypatch.setattr(enhanced_video_combine, "find_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(
+        enhanced_video_combine,
+        "_encode_with_available_encoder",
+        lambda *args, **kwargs: encode_calls.append(args) or "mock-encoder",
+    )
+    monkeypatch.setattr(enhanced_video_combine.folder_paths, "get_output_directory", lambda: str(tmp_path))
+    images = torch.rand((2, 4, 6, 3), dtype=torch.float32)
+
+    result = enhanced_video_combine.DaSiWa_EnhancedVideoCombine().combine(
+        images, 24.0, "H.265 (HEVC)", "MP4", "8-bit", 20, False, False,
+        "hevc-video", True, False,
+    )
+
+    assert len(encode_calls) == 1
+    assert result["ui"]["gifs"] == [{
+        "filename": "hevc-video_00001.mp4",
+        "subfolder": "",
+        "type": "output",
+        "format": "video/mp4",
+        "codec": "H.265 (HEVC)",
+        "width": 6,
+        "height": 4,
+        "fps": 24.0,
+    }]
 
 
 def test_missing_ffmpeg_reports_required_mp4_fallback(tmp_path, monkeypatch):

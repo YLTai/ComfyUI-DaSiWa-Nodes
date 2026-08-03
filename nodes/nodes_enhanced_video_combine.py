@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -12,6 +13,12 @@ import torch
 from PIL import Image
 
 import folder_paths
+try:
+    from aiohttp import web
+    from server import PromptServer
+except ImportError:
+    web = None
+    PromptServer = None
 try:
     from .helper_logging import log_dasiwa
 except ImportError:
@@ -56,6 +63,55 @@ def find_ffmpeg():
         return None
 
 
+def _preview_source_path(filename, subfolder, output_type):
+    """Resolve a ComfyUI asset without allowing traversal outside its asset root."""
+    if not filename or filename != os.path.basename(filename) or ".." in subfolder:
+        return None
+    output_dir = folder_paths.get_directory_by_type(output_type)
+    if not output_dir:
+        return None
+    root = os.path.abspath(output_dir)
+    candidate = os.path.abspath(os.path.join(root, subfolder, filename))
+    if os.path.commonpath((candidate, root)) != root or not os.path.isfile(candidate):
+        return None
+    return candidate
+
+
+if PromptServer is not None:
+    @PromptServer.instance.routes.get("/dasiwa/enhanced-video-preview")
+    async def enhanced_video_preview(request):
+        """Transcode unsupported outputs to fragmented H.264 MP4 without a sidecar file."""
+        source = _preview_source_path(
+            request.rel_url.query.get("filename", ""),
+            request.rel_url.query.get("subfolder", ""),
+            request.rel_url.query.get("type", "output"),
+        )
+        ffmpeg = find_ffmpeg()
+        if source is None:
+            return web.Response(status=404)
+        if ffmpeg is None:
+            return web.Response(status=503, text="FFmpeg is unavailable")
+        process = await asyncio.create_subprocess_exec(
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-i", source,
+            "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264",
+            "-preset", "ultrafast", "-crf", "24", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-f", "mp4", "pipe:1", stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        response = web.StreamResponse(headers={"Content-Type": "video/mp4", "Cache-Control": "no-store"})
+        await response.prepare(request)
+        try:
+            while chunk := await process.stdout.read(256 * 1024):
+                await response.write(chunk)
+        except (ConnectionResetError, asyncio.CancelledError):
+            if process.returncode is None:
+                process.kill()
+        finally:
+            await process.wait()
+        return response
+
+
 def detect_bit_depth(images):
     if not torch.is_floating_point(images):
         return 10 if images.element_size() >= 2 else 8
@@ -80,8 +136,24 @@ def _container_candidates(codec, container):
     return ("MP4", "MKV")
 
 
+def _auto_container_candidates(codec, container):
+    if container != "Auto":
+        return _container_candidates(codec, container)
+    return {"AV1": ("WebM",), "VP9": ("WebM",), "H.264": ("MP4",)}[codec]
+
+
 def _codec_candidates(codec):
-    return _AUTO_CODEC_CANDIDATES if codec == "Auto" else (codec,)
+    # H.265 is intentionally explicit-only: unlike AV1/VP9/H.264 it is not a
+    # broadly browser-compatible WebM/MP4 fallback.
+    return ("AV1", "VP9", "H.264") if codec == "Auto" else (codec,)
+
+
+def _selected_bit_depth(codec, bit_depth, images):
+    requested_bit_depth = {"8-bit": 8, "10-bit": 10}.get(bit_depth)
+    if requested_bit_depth is not None:
+        return requested_bit_depth
+    # Auto uses AV1 first and must therefore avoid 10-bit browser decoder gaps.
+    return 8 if codec == "Auto" else detect_bit_depth(images)
 
 
 def _animated_image_settings(container):
@@ -249,6 +321,8 @@ def _audio_file(audio):
 
 
 def _audio_encoder(audio_codec, container):
+    if isinstance(audio_codec, bool):
+        audio_codec = "Auto"
     if audio_codec == "Auto":
         return "libopus" if container == "WebM" else "aac"
     return _AUDIO_ENCODERS[audio_codec]
@@ -412,7 +486,7 @@ class DaSiWa_EnhancedVideoCombine:
             "required": {
                 "images": ("IMAGE", {"description": "Frames to encode as a video."}),
                 "frame_rate": ("FLOAT", {"default": 24.0, "min": 0.1, "max": 240.0, "step": 0.01}),
-                "codec": (_CODEC_OPTIONS, {"default": "Auto", "description": "Auto tests AV1, H.265, VP9, then H.264 encoders and uses the first working codec."}),
+                "codec": (_CODEC_OPTIONS, {"default": "Auto", "description": "Auto prefers browser-compatible 8-bit AV1/WebM, then VP9 and H.264 fallbacks. Choose H.265 explicitly when required."}),
                 "container": (_CONTAINER_OPTIONS, {"default": "Auto", "description": "Auto tries video containers only. Select Animated WebP or Animated AVIF manually; these image animations ignore codec selection and cannot include audio."}),
                 "bit_depth": (["Auto", "8-bit", "10-bit"], {"default": "Auto"}),
                 "quality": ("INT", {"default": 20, "min": 0, "max": 51, "description": "Encoding quality for every encoder. 0 is no compression (largest files); higher values increase compression and reduce quality. 20 is the recommended default."}),
@@ -474,7 +548,7 @@ class DaSiWa_EnhancedVideoCombine:
 
         if progress_bar is not None:
             progress_bar.update_absolute(0)
-        selected_bit_depth = {"8-bit": 8, "10-bit": 10}.get(bit_depth, detect_bit_depth(images))
+        selected_bit_depth = _selected_bit_depth(codec, bit_depth, images)
         output_dir = folder_paths.get_output_directory() if save_output else folder_paths.get_temp_directory()
         output_type = "output" if save_output else "temp"
         height, width = images.shape[1:3]
@@ -506,7 +580,8 @@ class DaSiWa_EnhancedVideoCombine:
                 selected_codec = container
             else:
                 for selected_codec in _codec_candidates(codec):
-                    for selected_container in _container_candidates(selected_codec, container):
+                    container_candidates = _auto_container_candidates(selected_codec, container) if codec == "Auto" else _container_candidates(selected_codec, container)
+                    for selected_container in container_candidates:
                         if codec == "Auto":
                             _log(f"Auto test: {selected_codec}/{selected_container}.")
                         output_path = os.path.join(
@@ -548,25 +623,7 @@ class DaSiWa_EnhancedVideoCombine:
             progress_bar.update_absolute(_encoded_frame_count(images, pingpong))
         frame_exports = _save_frame_exports(images, output_path, save_first_frame, save_last_frame, pingpong)
         animated_settings = _animated_image_settings(selected_container)
-        preview_path = output_path
-        preview_codec = selected_codec
-        if selected_codec == "H.265 (HEVC)":
-            preview_path = f"{os.path.splitext(output_path)[0]}-preview.mp4"
-            try:
-                _encode_with_available_encoder(
-                    ffmpeg, "H.264", 8, width, height, frame_rate,
-                    lambda: _iter_frame_byte_chunks(images, 8, pingpong), preview_path,
-                    "MP4", quality, quality, None,
-                )
-                preview_codec = "H.264"
-            except RuntimeError as error:
-                if os.path.exists(preview_path):
-                    os.unlink(preview_path)
-                preview_path = output_path
-                _log(f"Browser preview fallback failed: {error}")
-        preview_container = "MP4" if preview_codec == "H.264" and preview_path != output_path else selected_container
         mime_types = {"WebM": "video/webm", "MKV": "video/x-matroska", "MP4": "video/mp4", **{name: settings[2] for name, settings in _ANIMATED_IMAGE_SETTINGS.items()}}
-        preview_mime_type = mime_types[preview_container]
         output_mime_type = mime_types[selected_container]
         assets = [{"filename": os.path.basename(output_path), "subfolder": subfolder, "type": output_type, "format": output_mime_type, "width": width, "height": height}]
         assets.extend(
@@ -575,7 +632,7 @@ class DaSiWa_EnhancedVideoCombine:
         )
         ui = {"images": assets}
         if not animated_settings:
-            ui["gifs"] = [{"filename": os.path.basename(preview_path), "subfolder": subfolder, "type": output_type, "format": preview_mime_type, "width": width, "height": height, "fps": frame_rate}]
+            ui["gifs"] = [{"filename": os.path.basename(output_path), "subfolder": subfolder, "type": output_type, "format": output_mime_type, "codec": selected_codec, "width": width, "height": height, "fps": frame_rate}]
         _log(f"Output: {output_path} ({selected_codec}, {encoder}, {selected_bit_depth}-bit).")
         for path in frame_exports:
             _log(f"Frame export: {path}.")

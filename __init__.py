@@ -42,7 +42,7 @@ if __package__:
         "DaSiWa_MetadataImageSaverFull": "DaSiWa Metadata Image Saver (Full)",
         "DaSiWa_MetadataConfig": "DaSiWa Metadata Config",
         "DaSiWa_CreateExtraMetadata": "DaSiWa Create Extra Metadata",
-        "DaSiWa_LTX2LoraLoader": "DaSiWa LTX-2 LoRA Loader",
+        "DaSiWa_LTX2LoraLoader": "DaSiWa Advanced LoRA Loader",
         "DaSiWa_Watermark": "DaSiWa Watermark Overlay",
         "DaSiWa_RandomStringPicker": "DaSiWa Random String Picker",
         "DaSiWa_WildcardPresetPromptBuilder": "DaSiWa Wildcard & Preset Prompt Builder",

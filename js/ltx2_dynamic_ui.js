@@ -70,10 +70,12 @@ const THEMES = {
 };
 
 const THEME_ORDER = ["a", "b", "c", "d", "e", "f"];
+const MODEL_TYPES = ["Basic", "LTX-2.3", "MiniMax H3 (prepared)"];
+const hasSeparatedAudio = modelType => modelType === "LTX-2.3";
 const keyCache = {};
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const bump = (v, d) => Math.round(clamp((v || 1.0) + d, 0.0, 2.0) * 100) / 100;
-const bumpS = (v, d) => Math.round(clamp((v || 1.0) + d, -2.0, 2.0) * 100) / 100;
+const bumpS = (v, d) => Math.round(clamp((v || 1.0) + d, -5.0, 5.0) * 100) / 100;
 
 async function getCurrentLoraList(nodeData) {
   const fallback = nodeData?.input?.hidden?.available_loras?.[0] || ["None"];
@@ -94,13 +96,15 @@ async function getCurrentLoraList(nodeData) {
 }
 
 const CONTROL_DESCRIPTIONS = {
-  theme: "Cycle the visual theme of this LTX-2 LoRA stacker.",
+  mode: "Choose how this LoRA is applied. Only LTX-2.3 supports separate audio controls.",
+  theme: "Cycle the visual theme of this advanced LoRA stacker.",
+  toggleAll: "Enable every slot, or disable every slot when they are already enabled.",
   add: "Add one LoRA slot to the stack.",
   remove: "Remove the last LoRA slot from the stack.",
   enabled: "Enable or disable this LoRA slot.",
   lora: "Choose the LoRA file for this slot.",
-  str: "Master LoRA strength. This is multiplied by the video and audio multipliers. Range: -2.0 to 2.0.",
-  video: "Video branch multiplier. Effective video strength = STR x V. Range: 0.0 to 2.0.",
+  str: "Master LoRA strength. This is multiplied by VIS and, for LTX-2.3, A. Range: -5.0 to 5.0.",
+  video: "Visual multiplier. In Basic mode it controls the full LoRA map, including image models. Effective visual strength = STR x VIS. Range: 0.0 to 2.0.",
   audio: "Audio branch multiplier. Effective audio strength = STR x A. Range: 0.0 to 2.0.",
   keys: "Detected LoRA key counts for video and audio branches.",
 };
@@ -181,13 +185,25 @@ app.registerExtension({
         );
       }
       if (!this.properties.theme) this.properties.theme = "a";
+      if (!MODEL_TYPES.includes(this.properties.model_type)) this.properties.model_type = "Basic";
       const rows = JSON.parse(this.properties.stack_data);
       this.size = [720, calcHeight(rows.length)];
 
-      const w = this.addWidget("text", "stack_data", this.properties.stack_data, () => {});
-      w.draw = () => {};
-      w.computeSize = () => [0, -4];
-      this.widgets = [w];
+      const hideWidget = widget => {
+        widget.draw = () => {};
+        widget.computeSize = () => [0, -4];
+        return widget;
+      };
+      let stackWidget = this.widgets?.find(widget => widget.name === "stack_data");
+      if (!stackWidget) stackWidget = this.addWidget("text", "stack_data", this.properties.stack_data, () => {});
+      let modeWidget = this.widgets?.find(widget => widget.name === "model_type");
+      if (!modeWidget) {
+        modeWidget = this.addWidget("combo", "model_type", this.properties.model_type, value => {
+          this.properties.model_type = value;
+          this.setDirtyCanvas(true);
+        }, { values: MODEL_TYPES });
+      }
+      this.widgets = [hideWidget(stackWidget), hideWidget(modeWidget)];
     };
 
     nodeType.prototype.getExtraMenuOptions = function () {
@@ -197,6 +213,11 @@ app.registerExtension({
     const sync = node => {
       const w = node.widgets.find(w => w.name === "stack_data");
       if (w) w.value = node.properties.stack_data;
+    };
+
+    const syncModeWidget = node => {
+      const w = node.widgets.find(widget => widget.name === "model_type");
+      if (w) w.value = node.properties.model_type;
     };
 
     const getTooltipAt = (node, local_pos) => {
@@ -219,8 +240,12 @@ app.registerExtension({
       const btnX = (W - btnW) / 2;
       const plusX = btnX + btnW + 4;
       const minusX = plusX + BTN_H + 2;
+      const allW = 40;
+      const allX = btnX - allW - 4;
 
+      if (y > 20 && y < 36 && x > btnX && x < btnX + btnW) return CONTROL_DESCRIPTIONS.mode;
       if (y > BTN_Y && y < BTN_Y + BTN_H) {
+        if (x > allX && x < allX + allW) return CONTROL_DESCRIPTIONS.toggleAll;
         if (x > btnX && x < btnX + btnW) return CONTROL_DESCRIPTIONS.theme;
         if (x > plusX && x < plusX + BTN_H) return CONTROL_DESCRIPTIONS.add;
         if (data.length > 1 && x > minusX && x < minusX + BTN_H) return CONTROL_DESCRIPTIONS.remove;
@@ -266,6 +291,9 @@ app.registerExtension({
       const W = this.size[0];
       const H = this.size[1];
       sync(this);
+      syncModeWidget(this);
+      const modelType = this.properties.model_type || "Basic";
+      const audioEnabled = hasSeparatedAudio(modelType);
 
       const s = W / 1000;
 
@@ -283,8 +311,36 @@ app.registerExtension({
         rX: 770 * s, rW: W - 770 * s - 8,
       };
 
+      const modeW = 150, modeX = (W - modeW) / 2;
+      ctx.fillStyle = t.btnBg;
+      ctx.beginPath();
+      ctx.roundRect(modeX, 20, modeW, 16, 3);
+      ctx.fill();
+      ctx.strokeStyle = t.btnBorder;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+      ctx.fillStyle = t.btnText;
+      ctx.font = "bold 7px 'Courier New',monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`MODEL: ${modelType} ▼`, modeX + modeW / 2, 30);
+      ctx.textAlign = "left";
+
       // Theme button
       const btnW = 110, btnX = (W - btnW) / 2;
+      const allW = 40, allX = btnX - allW - 4;
+      const allEnabled = data.every(row => row.on);
+      ctx.fillStyle = t.btnBg;
+      ctx.beginPath();
+      ctx.roundRect(allX, BTN_Y, allW, BTN_H, 3);
+      ctx.fill();
+      ctx.strokeStyle = t.btnBorder;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+      ctx.fillStyle = t.btnText;
+      ctx.font = "bold 7px 'Courier New',monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(allEnabled ? "ALL✓" : "ALL", allX + allW / 2, BTN_Y + 10);
+      ctx.textAlign = "left";
       ctx.fillStyle = t.btnBg;
       ctx.beginPath();
       ctx.roundRect(btnX, BTN_Y, btnW, BTN_H, 3);
@@ -366,10 +422,19 @@ app.registerExtension({
         ctx.fillText(nm, C.nmX, ry + ROW_H / 2 + 2);
 
         drawPill(ctx, t, C.stX, pY, C.stW, pH, "STR", str, t.strColor, str === 0);
-        drawPill(ctx, t, C.vX, pY, C.vW, pH, "V", vs, t.vColor, vs === 0);
-        drawPill(ctx, t, C.aX, pY, C.aW, pH, "A", as_, t.aColor, as_ === 0);
+        drawPill(ctx, t, C.vX, pY, C.vW, pH, "VIS", vs, t.vColor, vs === 0);
+        drawPill(ctx, t, C.aX, pY, C.aW, pH, "A", as_, t.aColor, !audioEnabled || as_ === 0);
 
-        if (row.lora !== "None" && keyCache[row.lora]) {
+        if (!audioEnabled) {
+          ctx.font = "6px 'Courier New',monospace";
+          ctx.fillStyle = t.nameEmpty;
+          ctx.fillText(
+            modelType === "MiniMax H3 (prepared)"
+              ? "H3: keys TBD"
+              : "Full LoRA map",
+            C.rX, ry + ROW_H / 2 + 2,
+          );
+        } else if (row.lora !== "None" && keyCache[row.lora]) {
           const { v, a } = keyCache[row.lora];
           ctx.font = "6px 'Courier New',monospace";
           ctx.fillStyle = t.ratioV;
@@ -384,7 +449,7 @@ app.registerExtension({
           ctx.textAlign = "left";
           if (!keyCache[row.lora + "_p"]) {
             keyCache[row.lora + "_p"] = true;
-            fetch(`/dasiwa/ltx2/keycounts?lora=${encodeURIComponent(row.lora)}`)
+            fetch(`/dasiwa/ltx2/keycounts?lora=${encodeURIComponent(row.lora)}&model_type=${encodeURIComponent(modelType)}`)
               .then(r => r.json())
               .then(d => { keyCache[row.lora] = { v: d.v, a: d.a }; app.graph.setDirtyCanvas(true); })
               .catch(() => { keyCache[row.lora] = { v: "?", a: "?" }; });
@@ -408,8 +473,31 @@ app.registerExtension({
 
       const btnW = 110, btnX = (W - btnW) / 2;
       const plusX = btnX + btnW + 4;
+      const allW = 40, allX = btnX - allW - 4;
+
+      const modeW = 150, modeX = (W - modeW) / 2;
+      if (y > 20 && y < 36 && x > modeX && x < modeX + modeW) {
+        new LiteGraph.ContextMenu(MODEL_TYPES, {
+          event: e,
+          callback: value => {
+            this.properties.model_type = value;
+            syncModeWidget(this);
+            this.setDirtyCanvas(true);
+          },
+        });
+        return true;
+      }
 
       // Theme cycle
+      if (y > BTN_Y && y < BTN_Y + BTN_H && x > allX && x < allX + allW) {
+        const toggleAll = !data.every(row => row.on);
+        data.forEach(row => { row.on = toggleAll; });
+        this.properties.stack_data = JSON.stringify(data);
+        sync(this);
+        this.setDirtyCanvas(true);
+        return true;
+      }
+
       if (y > BTN_Y && y < BTN_Y + BTN_H && x > btnX && x < btnX + btnW) {
         const idx = THEME_ORDER.indexOf(this.properties.theme || "a");
         this.properties.theme = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
@@ -484,7 +572,7 @@ app.registerExtension({
           else if (x > C.stX + C.stW - 14 * s) data[i].str = bumpS(data[i].str, 0.05);
           else {
             const v = prompt("LoRA Strength:", data[i].str ?? 1);
-            if (v !== null) data[i].str = clamp(parseFloat(v) || 0, -2, 2);
+            if (v !== null) data[i].str = clamp(parseFloat(v) || 0, -5, 5);
           }
         } else if (x > C.vX && x < C.vX + C.vW) {
           if (x < C.vX + 10 * s) data[i].vs = bump(data[i].vs, -0.05);
@@ -493,7 +581,7 @@ app.registerExtension({
             const v = prompt("V Multiplier (0–2):", data[i].vs ?? 1);
             if (v !== null) data[i].vs = clamp(parseFloat(v) || 0, 0, 2);
           }
-        } else if (x > C.aX && x < C.aX + C.aW) {
+        } else if (hasSeparatedAudio(this.properties.model_type) && x > C.aX && x < C.aX + C.aW) {
           if (x < C.aX + 10 * s) data[i].as = bump(data[i].as, -0.05);
           else if (x > C.aX + C.aW - 10 * s) data[i].as = bump(data[i].as, 0.05);
           else {
