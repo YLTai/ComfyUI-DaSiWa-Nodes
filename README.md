@@ -110,10 +110,9 @@ The **DaSiWa Enhanced Video Combine** turns an `IMAGE` batch into a high-quality
 
 ![DaSiWa Enhanced Video Combine](assets/DaSiWa-Enhanced-Video-Combine.png)
 
-- **Enhanced host-aware encoding automation:** `Auto` prefers browser-compatible 8-bit AV1/WebM, then VP9 and H.264 fallbacks; H.265/HEVC remains explicit-only. Every candidate prefers NVIDIA NVENC, then other GPU encoders (Intel QSV, AMD AMF, VAAPI), then software.
-- **Enhanced container and codec safety automation:** Chooses compatible WebM/MKV/MP4 combinations per codec and retains a mandatory H.264/MP4 fallback if every preferred combination fails.
-- **Enhanced precision and preview automation:** Detects 8-bit versus 10-bit source-frame precision; unsupported browser codecs are preview-transcoded with FFmpeg as an HTTP stream without writing a sidecar.
-- **Enhanced output automation:** The node always re-encodes when queued, supports ping-pong loops, preserves optional workflow metadata, and names audio outputs with `-audio`.
+- **Host-aware encoding automation:** `Auto` now tests browser-compatible 8-bit AV1/WebM first, then VP9, then H.264; H.265/HEVC is excluded from Auto and must be chosen explicitly. Every candidate prefers NVIDIA NVENC, then other GPU encoders (Intel QSV, AMD AMF, VAAPI), then software.
+- **Container and codec safety automation:** Chooses compatible WebM/MKV/MP4 combinations per codec and retains a mandatory H.264/MP4 fallback if every preferred combination fails.
+- **Precision and preview automation:** Detects 8-bit versus 10-bit source-frame precision. Chromium on Linux can falsely report AV1/HEVC support while rendering 10-bit hardware streams as black; to avoid this, the node streams an FFmpeg-transcoded fragmented H.264 HTTP response for AV1 and H.265 outputs instead of relying on native decoders. No preview sidecar is written.
 - **Animated-image outputs:** Select Animated AVIF or Animated WebP explicitly for looping image output without audio. Animated AVIF prefers GPU AV1 encoding (`av1_nvenc`, then other hardware encoders) and safely falls back to software; Animated WebP uses its required CPU `libwebp_anim` encoder.
 - **Asset-panel frame automation:** Enable **Save first frame** and/or **Save last frame** to write PNGs next to the video with matching names and publish the video plus each generated PNG to ComfyUI Assets.
 - **Audio controls and preview behavior:** Mux connected audio, select audio codec/bitrate, optionally crop the video to audio duration, and hover the in-node preview to unmute it automatically.

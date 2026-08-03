@@ -16,10 +16,10 @@ Click the small `?` at the right of the node title for the same concise in-app r
 
 The node is deliberately designed to avoid fixed, host-specific video settings:
 
-- **Codec and encoder selection:** `Auto` prefers browser-compatible 8-bit AV1/WebM, then VP9 and H.264 fallbacks; H.265/HEVC is explicit-only because it is not a broad browser fallback. For every candidate it prefers NVIDIA NVENC, then Intel QSV, AMD AMF, VAAPI, and finally an appropriate software encoder. A listed FFmpeg encoder is not trusted until a real encode succeeds.
+- **Codec and encoder selection:** `Auto` tests browser-compatible 8-bit AV1/WebM first, then VP9, then H.264. H.265/HEVC is excluded from Auto and must be chosen explicitly. For each candidate the node prefers NVIDIA NVENC, then Intel QSV, AMD AMF, VAAPI, and finally a software encoder. An advertised FFmpeg encoder is not trusted until an actual encode attempt succeeds.
 - **Container safety:** Auto tries compatible container sequences for each codec and prevents an incompatible preference from being the only path. If all selected candidates fail, it attempts the mandatory H.264/MP4 fallback.
 - **Source precision:** with an explicit codec, `bit_depth=Auto` detects 8-bit versus 10-bit image-batch quantization. Browser-compatible codec `Auto` always emits 8-bit 4:2:0.
-- **Browser preview:** A requested H.265 final output remains H.265. When needed, FFmpeg transcodes it to a fragmented H.264 HTTP response for the in-node player without writing a sidecar file.
+- **Browser preview:** Chromium on Linux may claim AV1/HEVC support but render 10-bit hardware-encoded streams as black without raising a media error. To avoid this, the node always streams an FFmpeg-transcoded fragmented H.264 HTTP response for AV1 and H.265 outputs instead of relying on their native decoders. The requested output file is never changed and no preview sidecar is created.
 - **Output freshness:** The output node deliberately executes again on every Queue Prompt, including when upstream IMAGE inputs were cached. This ensures a new video, preview, and any selected frame exports are produced for every queue.
 - **Asset publication:** The final video and every selected first/last-frame PNG are published to ComfyUI Assets together.
 
@@ -33,7 +33,7 @@ The node is deliberately designed to avoid fixed, host-specific video settings:
 2. VP9
 3. H.264 / AVC
 
-H.265 / HEVC remains available as an explicit choice, but is excluded from browser-compatible Auto fallback.
+H.265 / HEVC is excluded from Auto and must be chosen explicitly.
 
 Within a codec, the node tries hardware encoders first (NVIDIA NVENC, Intel QSV, AMD AMF, VAAPI) followed by the supported software encoder. This is a runtime test, not just an encoder-list check, so an advertised but unusable host encoder falls back safely.
 
@@ -85,7 +85,7 @@ video_00002-audio-last-frame.png
 
 No browser download or popup is used. The encoded video and each selected PNG are included in the `ui.images` payload, so all generated files appear in ComfyUI Assets.
 
-Many Chromium/Linux installations cannot decode H.265 in a canvas/video element. For a H.265 output, the node streams an FFmpeg-transcoded fragmented H.264 MP4 response; the requested output file is not changed and no preview file is created.
+Many Chromium/Linux installations cannot decode H.265 in a canvas/video element (and can similarly misreport AV1 support while rendering 10-bit hardware streams as black). For H.265 and AV1 outputs, the node streams an FFmpeg-transcoded fragmented H.264 MP4 response; the requested output file is not changed and no preview file is created.
 
 `pingpong` appends reverse interior frames, giving a seamless forward/reverse loop. `pass_frames` returns the encoded frame sequence instead of an empty `IMAGE` result.
 
@@ -114,5 +114,5 @@ Example:
 |---|---|
 | Auto falls back to another codec | The higher-priority codec or its containers could not encode on this host. The final `No usable encoder` error includes the compact attempts when every fallback fails. |
 | No usable encoder was found | Install an FFmpeg build with at least a software encoder such as `libx264`; check the detailed CLI log. |
-| H.265 output has no preview | FFmpeg is unavailable or its H.264 stream encode failed. The final H.265 output remains valid. |
+| AV1/H.265 output has no preview | The node uses an FFmpeg-streamed H.264 preview for these codecs. If FFmpeg is unavailable or its H.264 stream encode failed, the preview cannot play. The final AV1/H.265 output remains valid. |
 | WebM mux fails | WebM requires VP8/VP9/AV1 video and compatible audio. Use `container=Auto` or select VP9/AV1. |
