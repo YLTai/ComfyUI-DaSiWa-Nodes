@@ -38,12 +38,52 @@ Ensure your ComfyUI version includes native MiniMax H3 support. Add these two no
 
 Wire them like this:
 
+```text
+┌──────────────────────┐
+│ Model Loader         │     (MiniMax-H3 checkpoint)
+│ CLIP Loader          │     (e.g. llama-3.2-11b-instruct.gguf)
+│ VAE Loader           │     (visual VAE)
+│ Audio VAE Loader     │     (only for REF2VA)
+└───┬────────┬────────┬─┘
+    │        │        │
+    ▼        ▼        ▼
+┌──────────────────────────────────────────────┐
+│ DaSiWa MiniMax H3 Director                   │
+│  - add/edit references                       │
+│  - set trims, ordering, prompts              │
+│  - emits structured "guide" dict             │
+└────┬─────────────────────────────────────────┘
+     │ guide
+     ▼
+┌──────────────────────────────────────────────┐
+│ DaSiwa MiniMax H3 Director Guide             │
+│  - validates director output                 │
+│  - assembles final prompt                    │
+│  - CALLS the native ComfyUI H3 nodes:        │
+│      • MiniMaxH3ImageToVideo   (FL2VA)       │
+│      • MiniMaxH3ReferenceToVideo (REF2VA)    │
+│  - you NEVER wire those native nodes yourself│
+└────┬─────────────────────────────────────────┘
+     │ positive, latent
+     ▼
+┌──────────────────────────────────────────────┐
+│ Standard ComfyUI sampling/decoding chain     │
+│  - KSampler                                  │
+│  - VAE Decode                                │
+│  - Enhanced Video Combine / Image Save etc.  │
+└──────────────────────────────────────────────┘
+```
+
+Connections detail:
+
 - Director `guide` → Guide `guide`
 - Selected MiniMax H3 model → Guide `model`
 - `CLIP` → Guide `clip`
 - Visual `VAE` → Guide `vae`
 - In REF2VA: audio VAE → Guide `audio_vae`
 - Guide outputs `positive` and `latent` → standard MiniMax H3 sampler/decoder chain
+
+Important: the Guide node replaces and wraps ComfyUI's native `MiniMaxH3ImageToVideo` and `MiniMaxH3ReferenceToVideo` nodes. You do not add or wire those native nodes yourself — the Guide calls them internally based on the chosen mode.
 
 The Director has optional model sockets (`fl2va_model`, `ref2va_model`) for lazy loading: connect whichever model matches your active mode. The Guide refuses REF2VA without an audio VAE connected.
 
