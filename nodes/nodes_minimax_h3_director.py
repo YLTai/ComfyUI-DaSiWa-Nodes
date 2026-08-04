@@ -73,6 +73,8 @@ class MiniMaxH3Director:
             value = item.get("value", item.get("tensor"))
             if value is None:
                 continue
+            trim_start = float(item.get("trim_start", 0.0))
+            trim_end = item.get("trim_end")
             if isinstance(value, str) and input_directory:
                 if kind == "image":
                     value = load_image(value, input_directory)
@@ -90,7 +92,8 @@ class MiniMaxH3Director:
                     item = {**item, "duration": float(value.shape[0]) / 24.0}
             attached_audio = item.get("audio")
             if isinstance(attached_audio, str) and input_directory:
-                attached_audio = load_audio(attached_audio, input_directory)
+                attached_audio = load_audio(attached_audio, input_directory, trim_start=trim_start,
+                                           trim_end=float(trim_end) if trim_end is not None else None)
                 item = {**item, "audio": attached_audio, "audio_duration": audio_duration(attached_audio)}
             if mode == "FL2VA":
                 if kind != "image":
