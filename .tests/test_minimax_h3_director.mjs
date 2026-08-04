@@ -16,7 +16,7 @@ assert.match(source, /field\.append\(editor, resizer\)/, "the resize grabber mus
 assert.match(source, /\.ds-h3\{box-sizing:border-box[^`]*background:transparent;border:0;border-radius:0;padding:0/, "the Director UI must render directly on the node without an outer panel");
 assert.doesNotMatch(source, /promptPanelHeight/, "restoring a workflow must not reference the removed prompt-panel divider state");
 assert.match(source, /FL2VA supports image references only; the audio lane is disabled\./, "unsupported drops must show an explicit FL2VA error");
-assert.match(source, /ds-h3-timeline-lane \$\{targetLane\}\$\{supported \? "" : " disabled"\}/, "unsupported lanes must be visibly blocked");
+assert.match(source, /ds-h3-timeline-lane \$\{targetLane\}[^`]*\$\{supported \? "" : " disabled"\}/, "unsupported lanes must be visibly blocked");
 assert.match(source, /removeButton\.textContent = "🗑 Remove"/, "selected media must have a toolbar remove button");
 assert.match(source, /close\.className = "ds-h3-clip-close"/, "selected media must have a clip-corner remove button");
 assert.doesNotMatch(source, /Remove selected media item/, "the old prompt-panel remove button must be absent");
@@ -25,6 +25,17 @@ assert.match(source, /ds-h3-status ds-h3-info-field/, "status messages must use 
 assert.match(source, /Math\.min\(sourceDuration, 15\)/, "long uploaded media must default to a 15-second crop");
 assert.match(source, /extractWaveform\(value, added\.id\)/, "audio uploads must decode a waveform");
 assert.match(source, /waveform\.className = "ds-h3-waveform"/, "audio clips must render their waveform canvas");
+assert.match(source, /let selectedLane = "visual"/, "the timeline must keep an active destination lane");
+assert.match(source, /ds-h3-timeline-lane\.selected/, "the active lane must be visibly highlighted");
+assert.match(source, /timeline\.addEventListener\("paste", async event =>/, "the timeline must accept clipboard paste events");
+assert.match(source, /await acceptFile\(file, selectedLane\)/, "clipboard files must be routed to the selected lane");
+assert.match(source, /lane selected\. Paste files here with Ctrl\+V\./, "lane selection must explain the clipboard interaction");
+assert.doesNotMatch(source, /FL2VA: \$\{timelineSeconds\.toFixed\(2\)\}s/, "the obsolete time-scale hint must be absent");
+assert.match(source, /audioSlotWidth = sourceDuration =>.*Math\.log2/, "audio slots must fit long source files logarithmically");
+assert.match(source, /ds-h3-audio-crop-marker start/, "audio clips must draw a crop-start position marker");
+assert.match(source, /ds-h3-audio-crop-marker end/, "audio clips must draw a crop-end position marker");
+assert.match(source, /Math\.log1p\(9 \* peaks\[peakIndex\]\)/, "audio waveform amplitudes must use logarithmic scaling");
+assert.doesNotMatch(source, /if \(item\.type === "audio"\) return; if \(event\.target !== clip\) return;/, "audio slots must be horizontally movable");
 assert.match(source, /window\.open\(REPOSITORY_URL, "_blank", "noopener,noreferrer"\)/, "the help button must open the GitHub documentation safely");
 
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
