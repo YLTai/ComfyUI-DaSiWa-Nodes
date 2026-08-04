@@ -6,17 +6,19 @@ A high-performance collection of custom nodes for ComfyUI, optimized for video w
 
 ### 🎬 MiniMax H3 Director
 
-Timeline-based authoring for MiniMax H3 text/image/video generation and reference-to-video workflows, integrated with ComfyUI's native H3 implementation.
+Timeline-based authoring for MiniMax H3 text/image/video generation and reference-to-video workflows, integrated with ComfyUI's native H3 implementation. Two lanes (Image/Video + Audio), slot-based layout, drag-and-drop / paste / upload, per-clip trims, per-media prompts, and a global prompt editor.
 
 ![MiniMax H3 Director](assets/DaSiWa-MiniMaxH3-Director.png)
 
-- **Two modes:** FL2VA for text/endpoint frames; REF2VA for multi-image, video, and audio references.
-- **Reference control:** reorder media, trim clips, pair video soundtracks, assign per-reference prompts, and keep a global prompt.
-- **Validated limits:** 9 images, 3 videos, 3 audio clips, 12 files; 2–15 second references and 15-second visual/audio totals.
-- **Native routing:** emits validated conditioning/latent inputs through the installed ComfyUI H3 nodes; lazy-loads only the selected mode's model.
-- **Prompting:** deterministic prompt assembly with compact camera/action/timing/audio guidance.
+- **FL2VA mode:** text-to-video (T2VA), first-frame (I2VA), or first+last frame interpolation; up to 2 image slots; automatic alignment-line insertion in the prompt.
+- **REF2VA mode:** up to 9 images, 3 videos, 3 audio clips, 12 files total; each video has a compact V / A / V+A switch (Video only / Audio only / Video+embedded-audio) using the same trim range for both streams; standalone audio also supports left/right trim handles.
+- **Reference handling:** reorder clips by dragging between slots, attach external soundtracks to videos, crop references visually via draggable markers, preserve incompatible media when toggling FL2VA ↔ REF2VA instead of losing assets.
+- **Lane selection & paste:** click an Image/Video or Audio lane to select it; Ctrl+V pastes clipboard images/videos/audio into the chosen lane; drag-and-drop from your file manager works too.
+- **Prompts:** one global prompt block plus short per-media prompt notes (images/videos only); final prompt is global + enabled media blocks assembled in timeline order.
+- **Validated limits:** 2–15 second reference windows; max 15s combined visual and audio duration each; strict path-safety under ComfyUI's input directory.
+- **Native routing & lazy loading:** hands validated data to ComfyUI's built-in MiniMaxH3ImageToVideo / MiniMaxH3ReferenceToVideo nodes; only the selected FL2VA or REF2VA model is requested.
 
-[Full documentation and prompting guide →](docs/minimax_h3_director.md)
+[Full documentation, UI guide, and prompting reference →](docs/minimax_h3_director.md)
 
 
 ---
