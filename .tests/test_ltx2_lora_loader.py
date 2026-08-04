@@ -64,7 +64,6 @@ def test_schema_exposes_the_universal_model_type_selector(loader_module):
     assert controls["model_type"][0] == [
         "Basic",
         "LTX-2.3",
-        "MiniMax H3 (prepared)",
     ]
     assert controls["model_type"][1]["default"] == "Basic"
     assert loader_module.DaSiWa_LTX2LoraLoader.CATEGORY == "DaSiWa/loaders/lora"
@@ -77,8 +76,7 @@ def test_package_keeps_node_id_and_uses_universal_display_name():
     assert '"DaSiWa Advanced LoRA Loader"' in source
 
 
-@pytest.mark.parametrize("model_type", ["Basic", "MiniMax H3 (prepared)"])
-def test_non_separated_modes_apply_every_weight_once(loader_module, tmp_path, monkeypatch, model_type):
+def test_basic_mode_applies_every_weight_once(loader_module, tmp_path, monkeypatch):
     lora_path = tmp_path / "mixed.safetensors"
     lora_path.touch()
     weights = {
@@ -98,7 +96,7 @@ def test_non_separated_modes_apply_every_weight_once(loader_module, tmp_path, mo
     )
 
     result = loader_module._apply_slot(
-        "model", "clip", str(lora_path), 0.8, 0.5, 1.7, model_type,
+        "model", "clip", str(lora_path), 0.8, 0.5, 1.7, "Basic",
     )
 
     assert result == ("model:loaded", "clip:loaded")
@@ -159,7 +157,7 @@ def test_frontend_has_mode_selector_and_disables_unavailable_audio_controls():
     source = (Path(__file__).parents[1] / "js" / "ltx2_dynamic_ui.js").read_text(encoding="utf-8")
 
     assert "MODEL_TYPES" in source
-    assert '"MiniMax H3 (prepared)"' in source
+    assert '"MiniMax H3 (prepared)"' not in source
     assert "hasSeparatedAudio" in source
     assert "syncModeWidget" in source
     assert '"VIS"' in source
@@ -168,7 +166,7 @@ def test_frontend_has_mode_selector_and_disables_unavailable_audio_controls():
     assert "ALL✓" in source
     assert "-5.0, 5.0" in source
     assert "clamp(parseFloat(v) || 0, -5, 5)" in source
-    assert '"H3: keys TBD"' in source
+    assert '"H3: keys TBD"' not in source
     assert "Audio separation awaits published MiniMax H3 tensor keys" not in source
 
 

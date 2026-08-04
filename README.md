@@ -89,7 +89,7 @@ The **DaSiWa Node Status Switch** lets you mute or bypass any node in your workf
 
 The **DaSiWa Advanced LoRA Loader** is a 10-slot stacker for ordinary image/video LoRAs and LTX-2.3. In **Basic mode**, it loads the complete LoRA map, so it is compatible with standard image and video models. Its `VIS` control means **visual strength**: it affects the whole LoRA map in Basic mode, including image models. LTX-2.3 additionally supports independent audio separation.
 
-- **Model Modes:** Select Basic for universal image/video compatibility, LTX-2.3 for separate visual/audio branches, or the safe MiniMax H3 prepared mode.
+- **Model Modes:** Select Basic for universal image/video compatibility or LTX-2.3 for separate visual/audio branches. MiniMax H3 uses Basic mode because its transformer blocks are shared between video and audio.
 - **Visual Control:** `STR × VIS` is the effective visual strength. In Basic mode, `VIS` controls the complete LoRA map; it is not video-only.
 - **Dual-Branch Control:** LTX-2.3 can adjust visual (`VIS×`) and audio (`A×`) multipliers independently per LoRA.
 - **10 LoRA Slots:** Stack up to 10 LoRAs with fine-grained strength control (STR: −5.0 to +5.0).
@@ -98,7 +98,7 @@ The **DaSiWa Advanced LoRA Loader** is a 10-slot stacker for ordinary image/vide
 - **6 Themes:** Switch between Jade, Neon, Studio, Chrome, OLED, and Wood color schemes.
 - **Searchable UI:** Quick LoRA search with live filtering in the node itself.
 
-![DaSiWa-LTX23-LoraLoader.png](assets/DaSiWa-LTX23-LoraLoader.png)
+![DaSiWa Advanced LoRA Loader](assets/DaSiWa-Advanced-LoraLoader.png)
 
 [Full documentation →](docs/ltx2_loader.md)
 

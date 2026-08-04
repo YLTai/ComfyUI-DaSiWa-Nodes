@@ -29,8 +29,7 @@ except ImportError:
 NUM_SLOTS = 10
 MODEL_TYPE_BASIC = "Basic"
 MODEL_TYPE_LTX23 = "LTX-2.3"
-MODEL_TYPE_MINIMAX_H3 = "MiniMax H3 (prepared)"
-MODEL_TYPES = (MODEL_TYPE_BASIC, MODEL_TYPE_LTX23, MODEL_TYPE_MINIMAX_H3)
+MODEL_TYPES = (MODEL_TYPE_BASIC, MODEL_TYPE_LTX23)
 
 
 def _is_audio_key(k):
@@ -124,9 +123,9 @@ class DaSiWa_LTX2LoraLoader:
                 "model": ("MODEL", {"description": "Base model that will receive the active LoRA stack."}),
                 "clip": ("CLIP", {"description": "CLIP/text encoder paired with the model; LoRA weights are applied when compatible."}),
                 "stack_data": ("STRING", {"default": "[]", "multiline": False, "description": "JSON-encoded LoRA slot data managed by the custom UI. Each slot stores on/off, LoRA file, master strength, video multiplier, and audio multiplier."}),
-                "model_type": (["Basic", "LTX-2.3", "MiniMax H3 (prepared)"], {
+                "model_type": (["Basic", "LTX-2.3"], {
                     "default": "Basic",
-                    "description": "Basic loads all LoRA tensors universally; LTX-2.3 enables video/audio separation; MiniMax H3 awaits its tensor layout.",
+                    "description": "Basic loads all LoRA tensors universally; LTX-2.3 enables video/audio separation.",
                 }),
             },
             "hidden": {"available_loras": (lora_list, {"description": "Internal list of LoRA files used by the custom slot picker."})}

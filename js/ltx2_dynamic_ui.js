@@ -70,7 +70,7 @@ const THEMES = {
 };
 
 const THEME_ORDER = ["a", "b", "c", "d", "e", "f"];
-const MODEL_TYPES = ["Basic", "LTX-2.3", "MiniMax H3 (prepared)"];
+const MODEL_TYPES = ["Basic", "LTX-2.3"];
 const hasSeparatedAudio = modelType => modelType === "LTX-2.3";
 const keyCache = {};
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -429,9 +429,7 @@ app.registerExtension({
           ctx.font = "6px 'Courier New',monospace";
           ctx.fillStyle = t.nameEmpty;
           ctx.fillText(
-            modelType === "MiniMax H3 (prepared)"
-              ? "H3: keys TBD"
-              : "Full LoRA map",
+            "Full LoRA map",
             C.rX, ry + ROW_H / 2 + 2,
           );
         } else if (row.lora !== "None" && keyCache[row.lora]) {
