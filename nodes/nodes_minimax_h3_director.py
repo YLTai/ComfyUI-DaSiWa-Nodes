@@ -53,6 +53,10 @@ class MiniMaxH3Director:
             raise ValueError("MiniMax Director timeline_data must contain an object")
 
         items = sorted(enumerate(state.get("items", [])), key=lambda pair: (int(pair[1].get("order", pair[0])), pair[0]))
+        # Preserve incompatible REF2VA media in workflow state so it returns when the
+        # user switches back, but never feed it to FL2VA.
+        if mode == "FL2VA":
+            items = [pair for pair in items if pair[1].get("enabled", True) and pair[1].get("type") == "image"][:2]
         images, videos, audios = [], [], []
         first_frame = last_frame = None
         ref_video_audios, ref_images, ref_videos, ref_audios = {}, {}, {}, {}
