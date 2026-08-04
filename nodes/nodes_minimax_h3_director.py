@@ -73,7 +73,10 @@ class MiniMaxH3Director:
                 if kind == "image":
                     value = load_image(value, input_directory)
                 elif kind == "audio":
-                    value = load_audio(value, input_directory)
+                    trim_start = float(item.get("trim_start", 0.0))
+                    trim_end = item.get("trim_end")
+                    value = load_audio(value, input_directory, trim_start=trim_start,
+                                       trim_end=float(trim_end) if trim_end is not None else None)
                     item = {**item, "duration": audio_duration(value)}
                 elif kind == "video":
                     trim_start = float(item.get("trim_start", 0.0))

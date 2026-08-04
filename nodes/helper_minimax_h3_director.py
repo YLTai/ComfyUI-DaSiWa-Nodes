@@ -192,7 +192,8 @@ def load_image(path: str, input_directory: str):
     return torch.from_numpy(array).unsqueeze(0)
 
 
-def load_audio(path: str, input_directory: str):
+def load_audio(path: str, input_directory: str, *, trim_start: float = 0.0,
+               trim_end: float | None = None):
     full_path = resolve_input_path(path, input_directory)
     try:
         import soundfile as sf
@@ -205,7 +206,13 @@ def load_audio(path: str, input_directory: str):
             raw = source.readframes(source.getnframes())
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
         waveform = torch.from_numpy(samples.reshape(-1, channels).T).unsqueeze(0)
-    return {"waveform": waveform, "sample_rate": int(sample_rate)}
+    if trim_start < 0 or (trim_end is not None and trim_end <= trim_start):
+        raise ValueError("audio trim range is invalid")
+    start = int(round(trim_start * sample_rate))
+    end = waveform.shape[-1] if trim_end is None else min(waveform.shape[-1], int(round(trim_end * sample_rate)))
+    if end <= start:
+        raise ValueError("audio trim range is outside the source duration")
+    return {"waveform": waveform[..., start:end], "sample_rate": int(sample_rate)}
 
 
 def audio_duration(audio: dict) -> float:
