@@ -39,14 +39,15 @@ Ensure your ComfyUI version includes native MiniMax H3 support. Add these two no
 Wire them like this:
 
 ```text
-┌──────────────────────┐
-│ Model Loader         │     (MiniMax-H3 checkpoint)
-│ CLIP Loader          │     (e.g. llama-3.2-11b-instruct.gguf)
-│ VAE Loader           │     (visual VAE)
-│ Audio VAE Loader     │     (only for REF2VA)
-└───┬────────┬────────┬─┘
-    │        │        │
-    ▼        ▼        ▼
+┌──────────────────────────────────────┐
+│ UNET Loader                          │     diffusion_models/*.safetensors
+│ CLIP Loader                          │     text_encoders/qwen3vl_32b_minimax_h3_*.safetensors
+│ VAE Loader (visual)                  │     vae/minimax_h3_video_vae_fp16.safetensors
+│ VAE Loader (audio)                   │     vae/minimax_h3_audio_vae_fp32.safetensors
+│                                      │     (only for REF2VA mode)
+└───┬────────────┬──────────┬──────────┘
+    │            │          │
+    ▼            ▼          ▼
 ┌──────────────────────────────────────────────┐
 │ DaSiWa MiniMax H3 Director                   │
 │  - add/edit references                       │
