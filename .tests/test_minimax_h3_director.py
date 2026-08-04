@@ -6,7 +6,7 @@ import wave
 import numpy as np
 import pytest
 
-from nodes.helper_minimax_h3_director import audio_duration, load_audio, load_embedded_video_audio
+from nodes.helper_minimax_h3_director import audio_duration, load_audio, load_embedded_video_audio, load_video
 from nodes import nodes_minimax_h3_director as director
 
 
@@ -112,3 +112,37 @@ def test_each_video_audio_pair_uses_its_matching_upstream_autogrow_key(monkeypat
     assert list(guide["ref_video_audios"]) == ["ref_video_audio_1", "ref_video_audio_2"]
     assert guide["ref_video_audios"]["ref_video_audio_1"]["waveform"][0, 0, 0] == 1
     assert guide["ref_video_audios"]["ref_video_audio_2"]["waveform"][0, 0, 0] == 2
+
+
+def test_load_video_falls_back_to_container_duration_when_stream_duration_is_missing(monkeypatch, tmp_path):
+    class Frame:
+        time_base = 1
+
+        def __init__(self, pts):
+            self.pts = pts
+
+        def to_rgb(self):
+            return self
+
+        def to_ndarray(self):
+            return np.zeros((1, 1, 3), dtype=np.uint8)
+
+    class Container:
+        duration = 3_000_000
+        streams = [types.SimpleNamespace(type="video", duration=None, time_base=1)]
+
+        def decode(self, stream):
+            return iter([Frame(0), Frame(1), Frame(2)])
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "av", types.SimpleNamespace(
+        time_base=1_000_000,
+        open=lambda path: Container(),
+    ))
+    (tmp_path / "durationless.mp4").touch()
+
+    frames = load_video("durationless.mp4", str(tmp_path), target_fps=1)
+
+    assert frames.shape[0] == 3

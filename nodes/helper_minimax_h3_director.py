@@ -276,7 +276,10 @@ def load_video(path: str, input_directory: str, *, trim_start: float = 0.0,
         stream = next((s for s in container.streams if s.type == "video"), None)
         if stream is None:
             raise ValueError("video file contains no video stream")
-        duration = float(stream.duration * stream.time_base) if stream.duration else None
+        duration = (float(stream.duration * stream.time_base)
+                    if stream.duration is not None and stream.time_base is not None else None)
+        if duration is None and container.duration is not None:
+            duration = float(container.duration) / float(av.time_base)
         if duration is None:
             raise ValueError("video duration could not be determined")
         end = duration if trim_end is None else min(float(trim_end), duration)
