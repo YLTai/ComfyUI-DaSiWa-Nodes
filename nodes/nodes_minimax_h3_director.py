@@ -5,6 +5,7 @@ from .helper_minimax_h3_director import (
     assemble_prompt,
     audio_duration,
     load_audio,
+    load_embedded_video_audio,
     load_image,
     load_video,
     normalize_guide,
@@ -75,6 +76,12 @@ class MiniMaxH3Director:
                 continue
             trim_start = float(item.get("trim_start", 0.0))
             trim_end = item.get("trim_end")
+            video_mode = item.get("media_mode", "video")
+            if kind == "video" and video_mode not in {"video", "audio", "video_audio"}:
+                raise ValueError(f"unsupported video media mode: {video_mode}")
+            include_video = kind != "video" or video_mode in {"video", "video_audio"}
+            include_embedded_audio = kind == "video" and video_mode in {"audio", "video_audio"}
+            embedded_audio = None
             if isinstance(value, str) and input_directory:
                 if kind == "image":
                     value = load_image(value, input_directory)
@@ -85,11 +92,15 @@ class MiniMaxH3Director:
                                        trim_end=float(trim_end) if trim_end is not None else None)
                     item = {**item, "duration": audio_duration(value)}
                 elif kind == "video":
-                    trim_start = float(item.get("trim_start", 0.0))
-                    trim_end = item.get("trim_end")
-                    value = load_video(value, input_directory, trim_start=trim_start,
-                                       trim_end=float(trim_end) if trim_end is not None else None)
-                    item = {**item, "duration": float(value.shape[0]) / 24.0}
+                    if include_video:
+                        value = load_video(value, input_directory, trim_start=trim_start,
+                                           trim_end=float(trim_end) if trim_end is not None else None)
+                        item = {**item, "duration": float(value.shape[0]) / 24.0}
+                    if include_embedded_audio:
+                        embedded_audio = load_embedded_video_audio(
+                            item["value"], input_directory, trim_start=trim_start,
+                            trim_end=float(trim_end) if trim_end is not None else None)
+                        item = {**item, "audio_duration": audio_duration(embedded_audio)}
             attached_audio = item.get("audio")
             if isinstance(attached_audio, str) and input_directory:
                 attached_audio = load_audio(attached_audio, input_directory, trim_start=trim_start,
@@ -114,12 +125,18 @@ class MiniMaxH3Director:
                 ref_images[key] = value
                 images.append(item)
             elif kind == "video":
-                key = f"ref_video_{len(ref_videos) + 1}"
-                ref_videos[key] = value
-                videos.append(item)
-                if item.get("audio") is not None:
-                    ref_video_audios[f"ref_video_audio_{len(ref_videos)}"] = item["audio"]
-                    audios.append({"duration": item.get("audio_duration", item.get("duration"))})
+                if include_video:
+                    key = f"ref_video_{len(ref_videos) + 1}"
+                    ref_videos[key] = value
+                    videos.append(item)
+                video_audio = embedded_audio if include_embedded_audio else item.get("audio")
+                if video_audio is not None:
+                    audio_item = {"duration": item.get("audio_duration", item.get("duration"))}
+                    if include_video:
+                        ref_video_audios[f"ref_video_audio_{len(ref_videos)}"] = video_audio
+                    else:
+                        ref_audios[f"ref_audio_{len(ref_audios) + 1}"] = video_audio
+                    audios.append(audio_item)
             elif kind == "audio":
                 ref_audios[f"ref_audio_{len(ref_audios) + 1}"] = value
                 audios.append(item)

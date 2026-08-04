@@ -220,6 +220,44 @@ def audio_duration(audio: dict) -> float:
     return float(waveform.shape[-1]) / float(audio["sample_rate"])
 
 
+def load_embedded_video_audio(path: str, input_directory: str, *, trim_start: float = 0.0,
+                              trim_end: float | None = None):
+    """Decode the embedded audio stream of a video into a cropped ComfyUI audio dict."""
+    try:
+        import av
+    except ImportError as exc:
+        raise RuntimeError("MiniMax H3 embedded video audio requires the PyAV package") from exc
+    if trim_start < 0 or (trim_end is not None and trim_end <= trim_start):
+        raise ValueError("embedded video audio trim range is invalid")
+    container = av.open(resolve_input_path(path, input_directory))
+    try:
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            raise ValueError("video file contains no audio stream")
+        sample_rate = int(stream.rate or 48_000)
+        chunks = []
+        for frame in container.decode(stream):
+            timestamp = float(frame.pts * frame.time_base) if frame.pts is not None else 0.0
+            frame_end = timestamp + float(frame.samples) / sample_rate
+            if frame_end <= trim_start or (trim_end is not None and timestamp >= trim_end):
+                continue
+            array = frame.to_ndarray()
+            if array.ndim == 1:
+                array = array[None, :]
+            start = max(0, int(round((trim_start - timestamp) * sample_rate)))
+            end = array.shape[-1] if trim_end is None else min(array.shape[-1], int(round((trim_end - timestamp) * sample_rate)))
+            if end > start:
+                chunks.append(torch.from_numpy(array[:, start:end]).float())
+        if not chunks:
+            raise ValueError("embedded video audio trim range produced no samples")
+        waveform = torch.cat(chunks, dim=-1)
+        if waveform.dtype.is_floating_point and waveform.abs().max() > 1:
+            waveform /= 32768.0
+        return {"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate}
+    finally:
+        container.close()
+
+
 def load_video(path: str, input_directory: str, *, trim_start: float = 0.0,
                trim_end: float | None = None, target_fps: int = FPS):
     """Decode a trimmed video to ComfyUI IMAGE frames at a fixed FPS.

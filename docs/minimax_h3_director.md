@@ -63,9 +63,9 @@ Replace `{duration}` with the Director `duration` value (e.g. `8.00` for 8 secon
 
 ### REF2VA
 
-Use when the generation should borrow identity, appearance, motion, composition, or sound from references. Select `REF2VA`, then add images, videos, and/or audio in the timeline. A video may have a soundtrack attached; standalone audio is also supported. Keep at least one image or video when using audio. Use the trim grips to select the useful portion of a reference before queueing.
+Use when the generation should borrow identity, appearance, motion, composition, or sound from references. Select `REF2VA`, then add images, videos, and/or audio in the timeline. Select a video clip to choose **Video only**, **Audio only**, or **Video + audio**; the latter two decode the clip's embedded audio and apply the exact same trim range as its frames. A video may also have a separate soundtrack attached; standalone audio is supported. Keep at least one image or video when using audio. Use the trim grips to select the useful portion of a reference before queueing.
 
-The backend loads uploaded media from ComfyUI's input directory, decodes images to `IMAGE`, audio to waveform/sample-rate dictionaries, and videos to 24-fps image batches. Paths are normalized and cannot escape the input directory.
+The backend loads uploaded media from ComfyUI's input directory, decodes images to `IMAGE`, audio (including selected embedded video audio) to waveform/sample-rate dictionaries, and videos to 24-fps image batches. Paths are normalized and cannot escape the input directory.
 
 ## Dense prompting guide
 
