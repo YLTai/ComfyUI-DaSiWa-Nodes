@@ -2,6 +2,7 @@
 import json
 
 from .helper_minimax_h3_director import (
+    align_frame_count,
     assemble_prompt,
     audio_duration,
     load_audio,
@@ -45,7 +46,10 @@ class MiniMaxH3Director:
 
     def build_guide(self, mode, prompt, width, height, duration, ref_image_size, timeline_data,
                     fl2va_model=None, ref2va_model=None):
-        length = int(duration) * 24
+        # Native MiniMax H3 uses a 17k+5 frame grid.  This exact value must be
+        # retained in the guide passed to the adapter; returning an aligned UI
+        # duration alone leaves native H3 conditioning at an invalid length.
+        length = align_frame_count(int(duration) * 24)
         try:
             state = json.loads(timeline_data or "{}")
         except (TypeError, json.JSONDecodeError) as exc:
@@ -64,7 +68,7 @@ class MiniMaxH3Director:
         try:
             import folder_paths
             input_directory = folder_paths.get_input_directory()
-        except ImportError:
+        except (ImportError, AttributeError):
             input_directory = None
         image_index = 0
         for _, item in items:
@@ -159,10 +163,8 @@ class MiniMaxH3Director:
             "ref_audios": ref_audios if mode == "REF2VA" else {},
         }
         normalize_guide(guide)
-        duration = max(5, round((length / 24.0) * 24))
-        duration += (5 - (duration % 17)) % 17
         selected_model = fl2va_model if mode == "FL2VA" else ref2va_model
-        return (guide, int(duration), resolved, int(width), int(height), selected_model,
+        return (guide, length, resolved, int(width), int(height), selected_model,
                 mode == "FL2VA", mode == "REF2VA")
 
 

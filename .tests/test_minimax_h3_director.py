@@ -10,6 +10,15 @@ from nodes.helper_minimax_h3_director import audio_duration, load_audio, load_em
 from nodes import nodes_minimax_h3_director as director
 
 
+def test_director_uses_the_native_h3_frame_grid_for_guide_and_output_length():
+    guide, output_length, *_ = director.MiniMaxH3Director().build_guide(
+        "FL2VA", "overall_soundscape: quiet room tone", 1344, 768, 5, "match", "{}"
+    )
+
+    assert guide["length"] == 124
+    assert output_length == 124
+
+
 def test_load_audio_applies_timeline_crop(tmp_path):
     path = tmp_path / "reference.wav"
     samples = np.zeros(20 * 8_000, dtype=np.int16)
