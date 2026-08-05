@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 import math
 import os
-import wave
 
 import numpy as np
 import torch
@@ -131,7 +130,7 @@ def normalize_guide(data: dict) -> NormalizedGuide:
     if not isinstance(data, dict):
         raise ValueError("MiniMax Director guide must be a dictionary")
     mode = data.get("mode", "FL2VA")
-    if mode not in {"FL2VA", "REF2VA"}:
+    if mode not in {"T2VA", "I2VA", "FL2VA", "L2VA", "REF2VA"}:
         raise ValueError(f"unsupported MiniMax Director mode: {mode}")
     prompt = str(data.get("prompt", ""))
     resolved = str(data.get("resolved_prompt") or assemble_prompt(prompt, data.get("prompt_blocks")))
@@ -140,11 +139,9 @@ def normalize_guide(data: dict) -> NormalizedGuide:
         width=int(data.get("width", 1344)), height=int(data.get("height", 768)),
         length=int(data.get("length", 124)), ref_image_size=data.get("ref_image_size", "match"),
     )
-    if mode == "FL2VA":
+    if mode in {"T2VA", "I2VA", "FL2VA", "L2VA"}:
         if data.get("ref_images") or data.get("ref_videos") or data.get("ref_audios") or data.get("ref_video_audios"):
-            raise ValueError("FL2VA accepts only zero, one, or two images")
-        if data.get("first_frame") is not None and data.get("last_frame") is not None:
-            return NormalizedGuide(**common, first_frame=data["first_frame"], last_frame=data["last_frame"])
+            raise ValueError(f"{mode} accepts only its optional image keyframes")
         return NormalizedGuide(**common, first_frame=data.get("first_frame"), last_frame=data.get("last_frame"))
     return NormalizedGuide(
         **common,
@@ -196,23 +193,37 @@ def load_audio(path: str, input_directory: str, *, trim_start: float = 0.0,
                trim_end: float | None = None):
     full_path = resolve_input_path(path, input_directory)
     try:
-        import soundfile as sf
-        samples, sample_rate = sf.read(full_path, always_2d=True, dtype="float32")
-        waveform = torch.from_numpy(samples.T).unsqueeze(0)
-    except ImportError:
-        with wave.open(full_path, "rb") as source:
-            sample_rate = source.getframerate()
-            channels = source.getnchannels()
-            raw = source.readframes(source.getnframes())
-        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-        waveform = torch.from_numpy(samples.reshape(-1, channels).T).unsqueeze(0)
+        import av
+    except ImportError as exc:
+        raise RuntimeError("MiniMax H3 audio references require the PyAV package") from exc
     if trim_start < 0 or (trim_end is not None and trim_end <= trim_start):
         raise ValueError("audio trim range is invalid")
-    start = int(round(trim_start * sample_rate))
-    end = waveform.shape[-1] if trim_end is None else min(waveform.shape[-1], int(round(trim_end * sample_rate)))
-    if end <= start:
-        raise ValueError("audio trim range is outside the source duration")
-    return {"waveform": waveform[..., start:end], "sample_rate": int(sample_rate)}
+    container = av.open(full_path)
+    try:
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            raise ValueError("audio file contains no audio stream")
+        sample_rate = int(stream.rate or 48_000)
+        chunks = []
+        for frame in container.decode(stream):
+            timestamp = float(frame.pts * frame.time_base) if frame.pts is not None else 0.0
+            frame_end = timestamp + float(frame.samples) / sample_rate
+            if frame_end <= trim_start or (trim_end is not None and timestamp >= trim_end):
+                continue
+            samples = frame.to_ndarray()
+            if samples.ndim == 1:
+                samples = samples[None, :]
+            if not samples.dtype.kind == "f":
+                samples = samples.astype(np.float32) / np.iinfo(samples.dtype).max
+            start = max(0, int(round((trim_start - timestamp) * sample_rate)))
+            end = samples.shape[-1] if trim_end is None else min(samples.shape[-1], int(round((trim_end - timestamp) * sample_rate)))
+            if end > start:
+                chunks.append(torch.from_numpy(samples[:, start:end]).float())
+        if not chunks:
+            raise ValueError("audio trim range produced no samples")
+        return {"waveform": torch.cat(chunks, dim=-1).unsqueeze(0), "sample_rate": sample_rate}
+    finally:
+        container.close()
 
 
 def audio_duration(audio: dict) -> float:
