@@ -108,9 +108,12 @@ def build_base_prompt(state: dict) -> str:
     """Generate prompt for T2VA/I2VA/FL2VA/L2VA using official guide format."""
     mode = state.get("mode", "T2VA")
     duration_s = state.get("duration", 5)
-    imd = (state.get("imd") or "").strip()
-    soundscape = (state.get("soundscape") or "").strip()
-    music = (state.get("music") or "N/A").strip()
+    imd_raw = state.get("imd")
+    imd = imd_raw.strip() if isinstance(imd_raw, str) else ""
+    soundscape_raw = state.get("soundscape")
+    soundscape = soundscape_raw.strip() if isinstance(soundscape_raw, str) else ""
+    music_raw = state.get("music")
+    music = music_raw.strip() if isinstance(music_raw, str) else "N/A"
 
     S = fmt_ss(duration_s)
     head = ""
@@ -138,44 +141,48 @@ def build_ref_prompt(state: dict) -> str:
     """Generate REF2VA prompt from plain-text sections."""
     ref = state.get("ref", {})
 
+    def _str(v):
+        return v.strip() if isinstance(v, str) else ""
+
     # Handle legacy v1 builder_state shapes by merging into v2 keys.
-    subject_definitions = (ref.get("subject_definitions") or "").strip()
+    subject_definitions = _str(ref.get("subject_definitions"))
     if not subject_definitions:
         defs_raw = ref.get("subject_defs") or []
         if isinstance(defs_raw, list):
-            subject_definitions = "\n".join(d["text"].strip() for d in defs_raw if isinstance(d, dict) and (d.get("text") or "").strip())
+            subject_definitions = "\n".join(_str(d["text"]) for d in defs_raw if isinstance(d, dict) and _str(d.get("text")))
 
-    summary = (ref.get("summary") or "").strip()
+    summary = _str(ref.get("summary"))
     if not summary:
         chosen = [t for t in TASK_TYPES if t in ref.get("summary_types", [])]
         types_str = " + ".join(chosen) or "reference generation"
-        summary_text = (ref.get("summary_text") or "").strip()
+        summary_text = _str(ref.get("summary_text"))
         if summary_text:
             summary = f"[{types_str}] {summary_text}"
 
-    retention_analysis = (ref.get("retention_analysis") or "").strip()
+    retention_analysis = _str(ref.get("retention_analysis"))
     if not retention_analysis:
         retention_rows = []
         for row in ref.get("retention", []):
-            label = row.get("label", "")
-            context = row.get("context", "")
-            marker = row.get("marker", "")
-            note = row.get("note", "")
+            label = _str(row.get("label"))
+            context = _str(row.get("context"))
+            marker = _str(row.get("marker"))
+            note = _str(row.get("note"))
             if not label or not marker:
                 continue
-            ctx_part = f" ({context.strip()})" if (context or "").strip() else ""
-            retention_rows.append(f"{label}{ctx_part}: {marker} - {note.strip()}")
+            ctx_part = f" ({context})" if context else ""
+            retention_rows.append(f"{label}{ctx_part}: {marker} - {note}")
         retention_analysis = "\n".join(retention_rows)
 
-    detailed_description = (ref.get("detailed_description") or "").strip()
+    detailed_description = _str(ref.get("detailed_description"))
     if not detailed_description:
-        style_line = (ref.get("style_line") or "").strip()
-        detail = (ref.get("detail") or "").strip()
+        style_line = _str(ref.get("style_line"))
+        detail = _str(ref.get("detail"))
         parts = [p for p in [style_line, detail] if p]
         detailed_description = "\n".join(parts)
 
-    soundscape = (ref.get("soundscape") or "").strip()
-    music = (ref.get("music") or "N/A").strip()
+    soundscape = _str(ref.get("soundscape"))
+    music_raw = ref.get("music")
+    music = music_raw.strip() if isinstance(music_raw, str) else "N/A"
 
     return (
         f"subject_definitions:\n{subject_definitions}\n\n"
