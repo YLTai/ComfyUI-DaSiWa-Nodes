@@ -6,12 +6,34 @@ A timeline-based authoring node for ComfyUI's native MiniMax H3 models. It centr
 
 Since the last GitHub release (August 2026):
 
+### New features
+
+- **REF2VA prompt builder redesigned:** simplified to six free-text fields (subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music). Headers are added automatically when the prompt is sent upstream. Legacy v1 structured-builder data is merged backward-compatibly into these fields.
+- **Insert [Shot N] button:** opens a small dialog asking for a shot number, then inserts `[Shot N] ` at the current cursor position in the appropriate text area — no more manual typing.
+- **Prefill Labels & Summary button (REF2VA):** scans your inserted media and generates `<Picture N>`, `<Video N>`, and `<Audio N>` label lines plus a task-prefixed summary line so you can focus on editing instead of boilerplate.
+- **Preview Prompt button:** opens a popup showing the exact prompt that will be sent to MiniMax H3 (including all section headers, alignment lines, and assembled fields). Includes a copy-to-clipboard button so you can verify or reuse the result offline.
+- **Video thumbnail previews:** every uploaded video now extracts its first frame and displays it as a background behind the clip tile, replacing the generic icon. Makes it easy to tell references apart without opening each one.
+- **Cleaner toolbar:** consolidated into a single horizontal row with mode buttons on the left and Clear/Remove/? controls on the right; removed redundant bubble elements and pulsing glows for a quieter interface.
+- **Dark-blue audio lane accent:** distinguishes the audio lane visually from the Image/Video lane and the green "+ empty-slot" indicators.
+
+### Earlier additions
+
 - **Embedded video audio extraction:** videos can now supply their own audio reference. Select A or V+A on a video clip to decode its embedded audio track with the same trim range used for frames.
 - **Per-video stream switch (V / A / V+A):** compact controls on each video tile let you treat it as Video only, Audio only, or Video+embedded-audio without adding separate audio slots.
 - **Trim support for standalone audio:** audio clips now show a waveform preview and draggable left/right crop markers, behaving identically to video trimming.
 - **Attached soundtrack trim alignment:** external soundtracks linked to a video share its trim window automatically.
 - **Mode-switch safety:** toggling FL2VA ↔ REF2VA preserves incompatible references instead of deleting them; they reappear when you switch back.
 - **Hardened video duration detection:** fallback to container-level duration when stream metadata is incomplete.
+
+### Bug fixes
+
+- Non-string values in prompt-builder fields no longer crash with `.strip()` TypeError.
+- Textarea `onChange` callbacks now receive the string value, not the raw Event object.
+- Missing `p2_shot`/`last_shot` builder keys guarded against KeyError outside FL2VA/L2VA modes.
+- Trim sliders only respond when clicking directly on crop markers, preventing accidental drags on the track background.
+- Images can now be dragged out of locked L2VA slot positions instead of being stuck forever.
+- Slot-capacity checks corrected so images are accepted in all valid endpoint modes.
+- Center drag handles restored on prompt-field resize bars.
 
 ## Quick overview
 
@@ -20,7 +42,10 @@ Since the last GitHub release (August 2026):
 - Two timeline lanes: Image/Video + Audio. Click a lane to select it; paste / drop media there.
 - Per-video stream switch: choose Video only, Audio only, or Video+embedded-audio with identical trim ranges.
 - Standalone audio clips can be trimmed with left/right handles just like video.
-- Deterministic prompt assembly: global prompt + enabled per-media prompt blocks in timeline order.
+- Video thumbnails: each uploaded video shows its first frame as a background preview behind the clip tile.
+- Mode-specific prompt builders:
+  - FL2VA/I2VA/L2VA/T2VA: guided fields for description and audio sections with automatic alignment headers.
+  - REF2VA: six free-text sections (subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music) with helper buttons — Insert Shot, Prefill Labels & Summary, and Preview Prompt.
 - Only the selected FL2VA or REF2VA model is loaded; the Guide node calls ComfyUI's built-in H3 nodes.
 
 ## Installation and graph setup
@@ -140,12 +165,12 @@ Open the node and read top-to-bottom.
 ### Toolbar row
 
 - **Title label:** "MiniMax H3 Director"
-- **Mode button:** shows current mode (`FL2VA` or `REF2VA`). Click to toggle. When switching modes:
+- **Mode buttons (left):** T2VA, I2VA, FL2VA, L2VA, REF2VA shown as small pills. Active mode has purple highlight. Click to switch modes. When switching modes:
   - Going to FL2VA hides non-image references but keeps them in memory so they reappear when you switch back.
   - Going to REF2VA restores all previously added media.
-- **? button:** opens the online documentation on GitHub.
+- **Clear button:** removes all media and prompts from the timeline (appears only when there is content).
 - **Remove button:** appears when a clip is selected; deletes that item.
-- **Clear button:** removes all media and prompts from the timeline.
+- **? button:** opens the online documentation on GitHub.
 
 ### Timeline area
 
@@ -175,6 +200,7 @@ Each media item renders as a labeled tile inside its lane.
 
 Common elements:
 
+- **Background preview:** images show themselves; videos display their first-frame thumbnail extracted at upload time. Makes it easy to identify references visually without opening previews.
 - **Identity badge (top-left):** shows the MiniMax reference label used in prompts: `Picture 1`, `Video 2`, `Audio 1`, etc., assigned by type in timeline order.
 - **Label text:** filename, duration, current crop range (for video/audio), and a truncated preview of the media prompt if present.
 - **Selection outline:** click a tile to select it; enables the Remove button and populates the Media Prompt editor below.
@@ -205,23 +231,34 @@ Images:
 
 ### Prompt editors
 
-Below the timeline are two resizable text areas.
+Below the timeline is a unified prompt-builder panel whose layout depends on the active mode. Both editors have resizable text areas with drag-handle bars at the bottom; heights persist in the workflow JSON.
 
-#### Media Prompt (upper editor)
+#### FL2VA / I2VA / L2VA / T2VA builder
 
-- Appears when an image or video clip is selected. Disabled (empty) when nothing is selected or when an audio clip is selected.
-- Purpose: write a concise responsibility note for the selected reference, e.g.:
-  - `"character identity and red coat"`
-  - `"use this clip's hand gesture timing"`
-  - `"room architecture and lighting"`
-- These short blocks are appended after the global prompt during assembly, in timeline order.
+Three labeled text areas:
 
-#### Global Prompt (lower editor)
+- **integrated_multimodal_description** — main scene/action/camera/environment description with optional `[Shot N]` markers. An **Insert [Shot N]** button pops up a dialog and places the marker at your cursor.
+- **overall_soundscape** — ambient sounds, dialogue, effects.
+- **non_diegetic_music** — background score or `N/A`.
 
-- Holds the main prompt structure for the whole generation.
-- For FL2VA: contains the alignment instruction line(s) plus core fields (`integrated_multimodal_description`, `overall_soundscape`, `non_diegetic_music`).
-- For REF2VA: should contain the six-section structure described in the prompting guide below.
-- Both editors have a drag-handle bar at the bottom for resizing height. Your preferred heights persist in the workflow JSON.
+Alignment instruction lines (for I2VA/FL2VA/L2VA) are generated automatically based on mode and duration; you do not type them manually.
+
+#### REF2VA builder
+
+Six labeled text areas matching the official full-reference format. Section headers (`subject_definitions:` etc.) are appended automatically by the backend; you write only the content:
+
+- **subject_definitions** — define `<Subject N>`, `<Picture N>`, `<Video N>`, `<Audio N>` entries and what each contributes.
+- **summary** — task-type prefix (`[reference generation + audio reference]`) plus one-line intent statement.
+- **retention_analysis** — per-label retention markers (`fully_preserved`, `attribute_transfer`, etc.) with brief rationale.
+- **detailed_description** — shot-by-shot narrative using `[Shot N]` and timestamps.
+- **overall_soundscape** — audio environment.
+- **non_diegetic_music** — score or `N/A`.
+
+Helper buttons above the fields:
+
+- **Insert [Shot N]** — asks for a shot number, inserts `[Shot N] ` at the cursor in the `detailed_description` area.
+- **Prefill Labels & Summary** — scans your timeline items and writes initial `<Picture N>`, `<Video N>`, `<Audio N>` label lines plus a summary template referencing them. Edit freely afterward.
+- **Preview Prompt** — opens a popup showing exactly how the final prompt will look once section headers and any alignment lines are applied. Includes a copy-to-clipboard button.
 
 ## Limits and validation
 
@@ -265,9 +302,12 @@ On queue, the Director executes this sequence:
    - Ordered lists of images, videos, audios with metadata.
    - Endpoint frames (FL2VA).
    - Reference maps keyed as `ref_image_N`, `ref_video_N`, `ref_audio_N`, `ref_video_audio_N`.
-   - Enabled per-media prompt blocks with their IDs and order.
+5. Reads the mode-specific prompt-builder state:
+   - FL2VA/I2VA/L2VA/T2VA: uses integrated_multimodal_description, overall_soundscape, non_diegetic_music fields.
+   - REF2VA: uses the six free-text sections (subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music).
+   - Alignment lines (I2VA/FL2VA/L2VA) are injected automatically based on mode and duration.
 
-This `guide` object is passed out as the sole data connection to the Guide node.
+This `guide` object and `builder_state` are passed out to the Guide node.
 
 ### The Guide node
 
@@ -277,9 +317,10 @@ The Guide is a thin adapter between your authored timeline and ComfyUI's native 
    - Confirms mode consistency.
    - Checks that required models/CLIP/VAEs are connected.
    - For REF2VA, ensures an audio VAE exists.
-2. Assembles the final prompt:
-   - Starts with the global prompt from the Director.
-   - Appends enabled per-media prompt blocks sorted by timeline position.
+2. Assembles the final prompt via the prompt-builder helper:
+   - Reads `builder_state` from the Director.
+   - For FL2VA/I2VA/L2VA/T2VA: injects alignment lines (when applicable), combines integrated_multimodal_description + overall_soundscape + non_diegetic_music into the canonical format.
+   - For REF2VA: wraps the six user-written sections with their standard headers (`subject_definitions:`, `summary:`, etc.). Legacy v1 structured-builder data is merged automatically if present.
    - Writes the result as `resolved_prompt`.
 3. Routes to the appropriate native node:
    - FL2VA → calls `MiniMaxH3ImageToVideo` with endpoint frames and prompt.
@@ -381,8 +422,10 @@ Example: `The camera pushes in with small amplitude at slow speed toward her han
 1. Choose FL2VA for endpoint/text work; REF2VA for multi-reference transfer.
 2. Add only references that contribute specific identity, motion, layout, or sound.
 3. Trim videos/audio to the strongest 2–15s segments; respect totals.
-4. Write the global prompt in subject → action → camera → environment → audio order.
-5. Add one-line responsibility notes as media prompts for key references.
+4. Use the mode-specific prompt builder:
+   - FL2VA/I2VA/L2VA/T2VA: fill the three guided fields; alignment lines appear automatically.
+   - REF2VA: click **Prefill Labels & Summary** to scaffold your labels, then edit subject definitions and detailed description. Use **Insert [Shot N]** for clean shot markers.
+5. Click **Preview Prompt** to verify the exact output before queuing.
 6. Verify duration, aspect ratio, and motion match your references; queue through the Guide.
 
 Official MiniMax H3 guides (canonical conventions):
