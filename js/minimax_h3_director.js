@@ -95,7 +95,7 @@ function createBuilderField(label, value, opts = {}) {
   area.rows = opts.rows || 3;
   area.placeholder = opts.placeholder || "";
   area.value = value || "";
-  if (opts.onChange) area.onchange = opts.onChange;
+  if (opts.onChange) area.onchange = e => opts.onChange(e.target.value);
   wrapper.appendChild(area);
   return wrapper;
 }
@@ -118,7 +118,7 @@ function install(node) {
   if (modeWidget) { modeWidget.hidden = true; modeWidget.draw = () => {}; modeWidget.computeSize = () => [0, -4]; }
   const prompt = () => node.widgets?.find(w => w.name === "prompt");
   const promptWidget = prompt(); if (promptWidget) { promptWidget.hidden = true; promptWidget.draw = () => {}; promptWidget.computeSize = () => [0, -4]; }
-  const status = document.createElement("div"); status.className = "ds-h3-status ds-h3-info-field"; status.textContent = "Info messages appear here.";
+  const status = document.createElement("div"); status.className = "ds-h3-status ds-h3-info-field"; status.textContent = ""; status.style.display = "none";
   const timeline = document.createElement("div"); timeline.className = "ds-h3 ds-h3-root"; timeline.tabIndex = 0;
   const setStatus = (message, isError = false) => { status.textContent = message; status.classList.toggle("error", isError); };
   const emit = () => { builderState.mode = mode(); state.builder_state = builderState; dataWidget.value = JSON.stringify(state); dataWidget.callback?.(dataWidget.value); if (builderWidget) { builderWidget.value = JSON.stringify(builderState); builderWidget.callback?.(builderWidget.value); } node.graph?.setDirtyCanvas(true, true); };
