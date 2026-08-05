@@ -70,6 +70,20 @@ def fmt_timestamp(sec: float) -> str:
 
 def default_builder_state(mode: str = "T2VA") -> dict:
     """Return a fresh prompt-builder state tree for a given mode."""
+    if mode == "REF2VA":
+        return {
+            "version": 2,
+            "mode": mode,
+            "duration": 5,
+            "ref": {
+                "subject_definitions": "",
+                "summary": "",
+                "retention_analysis": "",
+                "detailed_description": "",
+                "soundscape": "",
+                "music": "N/A",
+            },
+        }
     return {
         "version": 1,
         "mode": mode,
@@ -121,48 +135,53 @@ def build_base_prompt(state: dict) -> str:
 
 
 def build_ref_prompt(state: dict) -> str:
-    """Generate REF2VA prompt following guide §2.x structure."""
+    """Generate REF2VA prompt from plain-text sections."""
     ref = state.get("ref", {})
 
-    # subject_definitions
-    defs = "\n".join(
-        d["text"].strip() for d in ref.get("subject_defs", [])
-        if isinstance(d, dict) and (d.get("text") or "").strip()
-    )
+    # Handle legacy v1 builder_state shapes by merging into v2 keys.
+    subject_definitions = (ref.get("subject_definitions") or "").strip()
+    if not subject_definitions:
+        defs_raw = ref.get("subject_defs") or []
+        if isinstance(defs_raw, list):
+            subject_definitions = "\n".join(d["text"].strip() for d in defs_raw if isinstance(d, dict) and (d.get("text") or "").strip())
 
-    # summary: "[task_type(s)] description"
-    chosen = [t for t in TASK_TYPES if t in ref.get("summary_types", [])]
-    types_str = " + ".join(chosen) or "reference generation"
-    summary_text = (ref.get("summary_text") or "").strip()
-    summary = f"[{types_str}] {summary_text}"
+    summary = (ref.get("summary") or "").strip()
+    if not summary:
+        chosen = [t for t in TASK_TYPES if t in ref.get("summary_types", [])]
+        types_str = " + ".join(chosen) or "reference generation"
+        summary_text = (ref.get("summary_text") or "").strip()
+        if summary_text:
+            summary = f"[{types_str}] {summary_text}"
 
-    # retention_analysis: "Label(context): marker - note"
-    retention_rows = []
-    for row in ref.get("retention", []):
-        label = row.get("label", "")
-        context = row.get("context", "")
-        marker = row.get("marker", "")
-        note = row.get("note", "")
-        if not label or not marker:
-            continue
-        ctx_part = f" ({context.strip()})" if (context or "").strip() else ""
-        retention_rows.append(f"{label}{ctx_part}: {marker} - {note.strip()}")
-    retention = "\n".join(retention_rows)
+    retention_analysis = (ref.get("retention_analysis") or "").strip()
+    if not retention_analysis:
+        retention_rows = []
+        for row in ref.get("retention", []):
+            label = row.get("label", "")
+            context = row.get("context", "")
+            marker = row.get("marker", "")
+            note = row.get("note", "")
+            if not label or not marker:
+                continue
+            ctx_part = f" ({context.strip()})" if (context or "").strip() else ""
+            retention_rows.append(f"{label}{ctx_part}: {marker} - {note.strip()}")
+        retention_analysis = "\n".join(retention_rows)
 
-    # detailed_description: style opening + detail body
-    style_line = (ref.get("style_line") or "").strip()
-    detail = (ref.get("detail") or "").strip()
-    parts = [p for p in [style_line, detail] if p]
-    detailed = "\n".join(parts)
+    detailed_description = (ref.get("detailed_description") or "").strip()
+    if not detailed_description:
+        style_line = (ref.get("style_line") or "").strip()
+        detail = (ref.get("detail") or "").strip()
+        parts = [p for p in [style_line, detail] if p]
+        detailed_description = "\n".join(parts)
 
     soundscape = (ref.get("soundscape") or "").strip()
     music = (ref.get("music") or "N/A").strip()
 
     return (
-        f"subject_definitions:\n{defs}\n\n"
+        f"subject_definitions:\n{subject_definitions}\n\n"
         f"summary:\n{summary}\n\n"
-        f"retention_analysis:\n{retention}\n\n"
-        f"detailed_description:\n{detailed}\n\n"
+        f"retention_analysis:\n{retention_analysis}\n\n"
+        f"detailed_description:\n{detailed_description}\n\n"
         f"overall_soundscape:\n{soundscape}\n\n"
         f"non_diegetic_music:\n{music}"
     )
@@ -181,9 +200,12 @@ def validate_builder_state(state: dict) -> list[dict]:
 
     if mode == "REF2VA":
         ref = state.get("ref", {})
-        if not (ref.get("summary_text") or "").strip():
-            issues.append({"level": "warn", "msg": "REF2VA summary text is empty."})
-        if not (ref.get("subject_defs") or []):
+        # Check both v2 and legacy v1 keys.
+        has_summary = bool((ref.get("summary") or "").strip() or (ref.get("summary_text") or "").strip())
+        if not has_summary:
+            issues.append({"level": "warn", "msg": "REF2VA summary is empty."})
+        has_subjects = bool((ref.get("subject_definitions") or "").strip()) or bool(ref.get("subject_defs"))
+        if not has_subjects:
             issues.append({"level": "warn", "msg": "REF2VA subject_definitions is empty."})
 
     return issues
