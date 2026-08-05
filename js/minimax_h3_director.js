@@ -143,6 +143,7 @@ function install(node) {
     const helpers = document.createElement("div"); helpers.className = "ds-h3-actions";
     const shotBtn = document.createElement("button"); shotBtn.textContent = "Insert [Shot N]"; shotBtn.onclick = () => { const wrapper = panel.querySelector("[data-ref2va-target='detail']"); const ta = wrapper?.querySelector("textarea") ?? wrapper; const n = window.prompt("Shot number:", "1"); if (n && ta) insertAtCursor(ta, `[Shot ${n}] `); }; helpers.appendChild(shotBtn);
     const prefillBtn = document.createElement("button"); prefillBtn.textContent = "Prefill Labels & Summary"; prefillBtn.title = "Generate Subject/Picture/Video/Audio labels from inserted media and fill summary template"; prefillBtn.onclick = () => { generateRefLabelsAndSummary(panel); }; helpers.appendChild(prefillBtn);
+    const previewBtn = document.createElement("button"); previewBtn.textContent = "Preview Prompt"; previewBtn.title = "Show the full prompt that will be sent upstream"; previewBtn.onclick = () => { showPromptPreview(); }; helpers.appendChild(previewBtn);
     panel.appendChild(helpers);
     const subjField = createBuilderField("subject_definitions:", r.subject_definitions, { rows: 4, placeholder: "<Subject 1> is the woman in <Picture 1>, with short dark hair and a red coat.\n<Picture 1> is the opening-frame anchor for [Shot 1].\n<Subject 2> is the walking motion taken from <Video 1>.\n<Video 1> provides the camera path and pacing structure.\n<Audio 1> is the voice-timbre reference for <Subject 1>.", onChange: val => { r.subject_definitions = val; emit(); } }); allowNativeTextEditing(subjField.querySelector("textarea")); panel.appendChild(subjField);
     const summaryField = createBuilderField("summary:", r.summary, { rows: 3, placeholder: "[reference generation + audio reference] Use <Subject 1> from <Picture 1>, the motion and pacing of <Video 1>, and the voice character of <Audio 1>.", onChange: val => { r.summary = val; emit(); } }); allowNativeTextEditing(summaryField.querySelector("textarea")); panel.appendChild(summaryField);
@@ -198,6 +199,75 @@ function install(node) {
       builderState.ref.summary = summaryArea.value;
     }
     emit();
+  }
+
+  function showPromptPreview() {
+    const m = mode();
+    let promptText = "";
+    if (m === "REF2VA") {
+      const areas = timeline.querySelectorAll(".ds-h3-prompt-panel .ds-h3-prompt");
+      const vals = [];
+      areas.forEach(a => vals.push(String(a.value || "").trim()));
+      const subj = vals[0] || "";
+      const summ = vals[1] || "";
+      const ret = vals[2] || "";
+      const detail = vals[3] || "";
+      const sound = vals[4] || "";
+      const music = vals[5] || "N/A";
+      promptText =
+`subject_definitions:
+${subj}
+
+summary:
+${summ}
+
+retention_analysis:
+${ret}
+
+detailed_description:
+${detail}
+
+overall_soundscape:
+${sound}
+
+non_diegetic_music:
+${music}`;
+    } else {
+      const areas = timeline.querySelectorAll(".ds-h3-prompt-panel .ds-h3-prompt");
+      const imd = String(areas[0]?.value || "").trim();
+      const sound = String(areas[1]?.value || "").trim();
+      const music = String(areas[2]?.value || "N/A").trim();
+      let head = "";
+      if (m === "I2VA") {
+        head = "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.";
+      } else if (m === "FL2VA") {
+        head = "How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 2) aligns with the end mark of the target video.";
+      } else if (m === "L2VA") {
+        head = "How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the end mark of the target video.";
+      }
+      const body = `integrated_multimodal_description: ${imd}
+
+overall_soundscape: ${sound}
+
+non_diegetic_music: ${music}`;
+      promptText = head ? `${head}
+
+${body}` : body;
+    }
+    let overlay = document.createElement("div"); overlay.style.cssText = "position:fixed;inset:0;z-index:10002;display:flex;align-items:center;justify-content:center;background:rgba(8,10,14,.7);";
+    overlay.onclick = event => { if (event.target === overlay) overlay.remove(); };
+    const panel = document.createElement("div"); panel.style.cssText = "width:min(720px,90vw);max-height:85vh;display:flex;flex-direction:column;background:#111820;border:1px solid #40515e;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px #000;";
+    const header = document.createElement("div"); header.style.cssText = "padding:8px 12px;background:#0d1217;color:#dbe7f0;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #344452;";
+    header.innerHTML = `<span>Prompt Preview (${m})</span><button title="Copy">📋</button>`;
+    const copyBtn = header.querySelector("button");
+    copyBtn.onclick = () => { navigator.clipboard.writeText(promptText).then(() => { copyBtn.textContent = "✓"; setTimeout(() => copyBtn.textContent = "📋", 1200); }).catch(() => { copyBtn.textContent = "×"; }); };
+    const closeBtn = document.createElement("button"); closeBtn.textContent = "×"; closeBtn.style.cssText = "background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px;"; closeBtn.onclick = () => overlay.remove(); header.appendChild(closeBtn);
+    const body = document.createElement("div"); body.style.cssText = "padding:10px 12px;overflow:auto;";
+    const textarea = document.createElement("textarea"); textarea.readOnly = true; textarea.value = promptText; textarea.style.cssText = "width:100%;min-height:300px;max-height:60vh;resize:vertical;background:#090d11;color:#e5eef4;border:1px solid #40515e;border-radius:4px;padding:7px;font-family:monospace;font-size:11px;line-height:1.4;box-sizing:border-box;"; body.appendChild(textarea);
+    const footer = document.createElement("div"); footer.style.cssText = "padding:8px 12px;background:#0d1217;display:flex;justify-content:flex-end;gap:6px;border-top:1px solid #344452;";
+    const doneBtn = document.createElement("button"); doneBtn.textContent = "Done"; doneBtn.onclick = () => overlay.remove(); footer.appendChild(doneBtn);
+    panel.append(header, body, footer); overlay.appendChild(panel); document.body.appendChild(overlay);
+    window.addEventListener("keydown", event => { if (event.key === "Escape") overlay.remove(); }, { once: true });
   }
 
   let previewOverlay = null;
