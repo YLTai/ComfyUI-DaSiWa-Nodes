@@ -88,6 +88,7 @@ function insertAtCursor(textarea, text) {
 function createBuilderField(label, value, opts = {}) {
   const wrapper = document.createElement("div");
   wrapper.style.display = "flex"; wrapper.style.flexDirection = "column"; wrapper.style.gap = "2px";
+  if (opts.dataAttr) wrapper.dataset.ref2vaTarget = opts.dataAttr;
   if (label) { const lbl = document.createElement("div"); lbl.className = "ds-h3-small"; lbl.textContent = label; wrapper.appendChild(lbl); }
   const area = document.createElement(opts.tag || "textarea");
   area.className = opts.class || "ds-h3-prompt";
@@ -139,12 +140,64 @@ function install(node) {
     panel.replaceChildren();
     const r = builderState.ref || {};
     const label = document.createElement("div"); label.className = "ds-h3-small"; label.textContent = "REF2VA prompt builder — write freely; headers are added automatically"; panel.appendChild(label);
-    const subjField = createBuilderField("subject_definitions:", r.subject_definitions, { rows: 3, placeholder: "One subject per line...", onChange: val => { r.subject_definitions = val; emit(); } }); allowNativeTextEditing(subjField.querySelector("textarea")); panel.appendChild(subjField);
-    const summaryField = createBuilderField("summary:", r.summary, { rows: 3, placeholder: "What this reference material accomplishes...", onChange: val => { r.summary = val; emit(); } }); allowNativeTextEditing(summaryField.querySelector("textarea")); panel.appendChild(summaryField);
-    const retField = createBuilderField("retention_analysis:", r.retention_analysis, { rows: 3, placeholder: "What to preserve/change from references...", onChange: val => { r.retention_analysis = val; emit(); } }); allowNativeTextEditing(retField.querySelector("textarea")); panel.appendChild(retField);
-    const detailField = createBuilderField("detailed_description:", r.detailed_description, { rows: 5, placeholder: "Scene-by-scene visual description...", onChange: val => { r.detailed_description = val; emit(); } }); allowNativeTextEditing(detailField.querySelector("textarea")); panel.appendChild(detailField);
-    const rsoundField = createBuilderField("overall_soundscape:", r.soundscape, { rows: 3, placeholder: "Audio environment description...", onChange: val => { r.soundscape = val; emit(); } }); allowNativeTextEditing(rsoundField.querySelector("textarea")); panel.appendChild(rsoundField);
-    const rmusicField = createBuilderField("non_diegetic_music:", r.music, { rows: 2, placeholder: 'N/A or background score...', onChange: val => { r.music = val; emit(); } }); allowNativeTextEditing(rmusicField.querySelector("textarea")); panel.appendChild(rmusicField);
+    const helpers = document.createElement("div"); helpers.className = "ds-h3-actions";
+    const shotBtn = document.createElement("button"); shotBtn.textContent = "Insert [Shot N]"; shotBtn.onclick = () => { const wrapper = panel.querySelector("[data-ref2va-target='detail']"); const ta = wrapper?.querySelector("textarea") ?? wrapper; const n = window.prompt("Shot number:", "1"); if (n && ta) insertAtCursor(ta, `[Shot ${n}] `); }; helpers.appendChild(shotBtn);
+    const prefillBtn = document.createElement("button"); prefillBtn.textContent = "Prefill Labels & Summary"; prefillBtn.title = "Generate Subject/Picture/Video/Audio labels from inserted media and fill summary template"; prefillBtn.onclick = () => { generateRefLabelsAndSummary(panel); }; helpers.appendChild(prefillBtn);
+    panel.appendChild(helpers);
+    const subjField = createBuilderField("subject_definitions:", r.subject_definitions, { rows: 4, placeholder: "<Subject 1> is the woman in <Picture 1>, with short dark hair and a red coat.\n<Picture 1> is the opening-frame anchor for [Shot 1].\n<Subject 2> is the walking motion taken from <Video 1>.\n<Video 1> provides the camera path and pacing structure.\n<Audio 1> is the voice-timbre reference for <Subject 1>.", onChange: val => { r.subject_definitions = val; emit(); } }); allowNativeTextEditing(subjField.querySelector("textarea")); panel.appendChild(subjField);
+    const summaryField = createBuilderField("summary:", r.summary, { rows: 3, placeholder: "[reference generation + audio reference] Use <Subject 1> from <Picture 1>, the motion and pacing of <Video 1>, and the voice character of <Audio 1>.", onChange: val => { r.summary = val; emit(); } }); allowNativeTextEditing(summaryField.querySelector("textarea")); panel.appendChild(summaryField);
+    const retField = createBuilderField("retention_analysis:", r.retention_analysis, { rows: 4, placeholder: "<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - identity and clothing remain consistent.\n<Picture 1> ([Shot 1] first frame): fully_preserved - opening composition anchor.\n<Subject 2> (motion transferred to <Subject 1>): attribute_transfer - walk rhythm is applied to <Subject 1>.\n<Video 1> (pacing structure): weak_reference - general timing and camera rhythm are retained.\n<Audio 1>: reference - timbre and delivery are followed without copying the signal.", onChange: val => { r.retention_analysis = val; emit(); } }); allowNativeTextEditing(retField.querySelector("textarea")); panel.appendChild(retField);
+    const detailField = createBuilderField("detailed_description:", r.detailed_description, { rows: 5, placeholder: "[Shot 1] ... [Shot 2] At 00:04.500, ...", dataAttr: "detail", onChange: val => { r.detailed_description = val; emit(); } }); allowNativeTextEditing(detailField.querySelector("textarea")); panel.appendChild(detailField);
+    const rsoundField = createBuilderField("overall_soundscape:", r.soundscape, { rows: 2, placeholder: "Audio environment description...", onChange: val => { r.soundscape = val; emit(); } }); allowNativeTextEditing(rsoundField.querySelector("textarea")); panel.appendChild(rsoundField);
+    const rmusicField = createBuilderField("non_diegetic_music:", r.music, { rows: 2, placeholder: "N/A or background score...", onChange: val => { r.music = val; emit(); } }); allowNativeTextEditing(rmusicField.querySelector("textarea")); panel.appendChild(rmusicField);
+  }
+
+  function generateRefLabelsAndSummary(panel) {
+    const items = activeItems().sort((a, b) => {
+      const typeOrder = { image: 0, video: 1, audio: 2 };
+      return (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3) || a.slot - b.slot;
+    });
+    const pictures = []; const videos = []; const audios = [];
+    items.forEach(item => {
+      if (item.type === "image") pictures.push(item);
+      else if (item.type === "video") videos.push(item);
+      else if (item.type === "audio") audios.push(item);
+    });
+    const subjLines = [];
+    let pictureIdx = 1; let videoIdx = 1; let audioIdx = 1;
+    pictures.forEach(item => {
+      subjLines.push(`<Picture ${pictureIdx}> is the opening-frame anchor.`);
+      pictureIdx++;
+    });
+    videos.forEach(item => {
+      subjLines.push(`<Video ${videoIdx}> provides the camera path and pacing structure.`);
+      videoIdx++;
+    });
+    audios.forEach(item => {
+      subjLines.push(`<Audio ${audioIdx}> is the voice-timbre and audio reference.`);
+      audioIdx++;
+    });
+    const subjArea = panel.querySelector("[data-ref2va-target='subj']")?.querySelector("textarea") || panel.querySelectorAll(".ds-h3-prompt")[0]?.querySelector("textarea") || panel.querySelectorAll(".ds-h3-prompt")[0];
+    if (subjArea && subjLines.length > 0) {
+      subjArea.value = subjLines.join("\n");
+      builderState.ref.subject_definitions = subjArea.value;
+    }
+    const summaryArea = panel.querySelectorAll(".ds-h3-prompt")[1]?.querySelector("textarea") || panel.querySelectorAll(".ds-h3-prompt")[1];
+    if (summaryArea) {
+      const refs = [];
+      pictures.forEach((_, i) => refs.push(`<Picture ${i + 1}>`));
+      videos.forEach((_, i) => refs.push(`<Video ${i + 1}>`));
+      audios.forEach((_, i) => refs.push(`<Audio ${i + 1}>`));
+      const taskPrefixes = [];
+      if (pictures.length > 0) taskPrefixes.push("reference generation");
+      if (videos.length > 0) taskPrefixes.push("video editing");
+      if (audios.length > 0) taskPrefixes.push("audio reference");
+      const prefix = taskPrefixes.length ? `[${taskPrefixes.join(" + ")}] ` : "";
+      const summaryLine = prefix + "Use " + refs.map(r => r).join(", ") + ".";
+      summaryArea.value = summaryLine;
+      builderState.ref.summary = summaryArea.value;
+    }
+    emit();
   }
 
   let previewOverlay = null;
