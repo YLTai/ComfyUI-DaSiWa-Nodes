@@ -222,8 +222,13 @@ function install(node) {
       const filledBar = document.createElement("div"); filledBar.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;border-radius:3px;background:rgba(126,210,157,.25);pointer-events:none;";
       const markerS = document.createElement("div"); markerS.style.cssText = "position:absolute;top:-2px;width:8px;height:22px;background:#f3c67a;border-radius:2px;z-index:3;cursor:pointer;transform:translateX(-50%);";
       const markerE = document.createElement("div"); markerE.style.cssText = "position:absolute;top:-2px;width:8px;height:22px;background:#8dd7ff;border-radius:2px;z-index:3;cursor:pointer;transform:translateX(-50%);";
-      const rangeTs = document.createElement("input"); rangeTs.type = "range"; rangeTs.min = "0"; rangeTs.max = "100"; rangeTs.step = "0.1"; rangeTs.value = ((trimStart / sourceDuration) * 100).toFixed(1); rangeTs.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:4;";
-      const rangeTe = document.createElement("input"); rangeTe.type = "range"; rangeTe.min = "0"; rangeTe.max = "100"; rangeTe.step = "0.1"; rangeTe.value = ((trimEnd / sourceDuration) * 100).toFixed(1); rangeTe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:4;";
+      const rangeTs = document.createElement("input"); rangeTs.type = "range"; rangeTs.min = "0"; rangeTs.max = "100"; rangeTs.step = "0.1"; rangeTs.value = ((trimStart / sourceDuration) * 100).toFixed(1); rangeTs.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;pointer-events:none;z-index:0;";
+      const rangeTe = document.createElement("input"); rangeTe.type = "range"; rangeTe.min = "0"; rangeTe.max = "100"; rangeTe.step = "0.1"; rangeTe.value = ((trimEnd / sourceDuration) * 100).toFixed(1); rangeTe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;pointer-events:none;z-index:0;";
+      const MARKER_GRAB_RADIUS = 12;
+      const pointerPct = pointerX => {
+        const rect = trackBg.getBoundingClientRect();
+        return ((pointerX - rect.left) / rect.width) * 100;
+      };
       const syncMarkers = () => {
         const sPct = parseFloat(rangeTs.value);
         const ePct = parseFloat(rangeTe.value);
@@ -249,12 +254,35 @@ function install(node) {
         teInput.value = teSec.toFixed(2);
       };
       let dragging = null;
-      rangeTs.oninput = () => { dragging = "left"; clampSliders(); };
-      rangeTs.onmouseup = () => { dragging = null; };
-      rangeTs.ontouchend = () => { dragging = null; };
-      rangeTe.oninput = () => { dragging = "right"; clampSliders(); };
-      rangeTe.onmouseup = () => { dragging = null; };
-      rangeTe.ontouchend = () => { dragging = null; };
+      const onStart = pointerX => {
+        const pct = pointerPct(pointerX);
+        const sPct = parseFloat(rangeTs.value);
+        const ePct = parseFloat(rangeTe.value);
+        if (Math.abs(pct - sPct) <= MARKER_GRAB_RADIUS && Math.abs(pct - sPct) <= Math.abs(pct - ePct)) {
+          dragging = "left";
+        } else if (Math.abs(pct - ePct) <= MARKER_GRAB_RADIUS) {
+          dragging = "right";
+        } else {
+          dragging = null;
+        }
+      };
+      const onMove = pointerX => {
+        if (!dragging) return;
+        const pct = pointerPct(pointerX);
+        if (dragging === "left") {
+          rangeTs.value = Math.max(0, Math.min(100, pct));
+        } else {
+          rangeTe.value = Math.max(0, Math.min(100, pct));
+        }
+        clampSliders();
+      };
+      const onEnd = () => { dragging = null; };
+      trackBg.addEventListener("mousedown", event => { onStart(event.clientX); });
+      window.addEventListener("mousemove", event => { onMove(event.clientX); });
+      window.addEventListener("mouseup", () => { onEnd(); });
+      trackBg.addEventListener("touchstart", event => { onStart(event.touches[0].clientX); }, { passive: false });
+      trackBg.addEventListener("touchmove", event => { event.preventDefault(); onMove(event.touches[0].clientX); }, { passive: false });
+      trackBg.addEventListener("touchend", () => { onEnd(); });
       tsInput.onchange = updateFromInputs;
       teInput.onchange = updateFromInputs;
       updateFromInputs();
