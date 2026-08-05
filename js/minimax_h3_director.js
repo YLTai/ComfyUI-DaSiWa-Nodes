@@ -87,7 +87,8 @@ function insertAtCursor(textarea, text) {
 
 function createBuilderField(label, value, opts = {}) {
   const wrapper = document.createElement("div");
-  wrapper.style.display = "flex"; wrapper.style.flexDirection = "column"; wrapper.style.gap = "2px";
+  wrapper.className = "ds-h3-prompt-field";
+  wrapper.style.display = "flex"; wrapper.style.flexDirection = "column"; wrapper.style.gap = "2px"; wrapper.style.position = "relative";
   if (opts.dataAttr) wrapper.dataset.ref2vaTarget = opts.dataAttr;
   if (label) { const lbl = document.createElement("div"); lbl.className = "ds-h3-small"; lbl.textContent = label; wrapper.appendChild(lbl); }
   const area = document.createElement(opts.tag || "textarea");
@@ -97,6 +98,13 @@ function createBuilderField(label, value, opts = {}) {
   area.value = value || "";
   if (opts.onChange) area.onchange = e => opts.onChange(e.target.value);
   wrapper.appendChild(area);
+  const resizer = document.createElement("div");
+  resizer.className = "ds-h3-prompt-field-resizer";
+  let dragging = false, startY = 0, startH = 0;
+  resizer.addEventListener("pointerdown", ev => { dragging = true; startY = ev.clientY; startH = area.clientHeight; area.setPointerCapture(ev.pointerId); });
+  window.addEventListener("pointermove", ev => { if (!dragging) return; area.style.height = Math.max(60, startH + (ev.clientY - startY)) + "px"; });
+  window.addEventListener("pointerup", () => { dragging = false; });
+  wrapper.appendChild(resizer);
   return wrapper;
 }
 
