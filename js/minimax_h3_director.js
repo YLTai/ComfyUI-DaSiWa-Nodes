@@ -619,6 +619,21 @@ ${body}` : body;
     mediaPromptHeight = Math.max(90, Number(state.media_prompt_height) || 120);
     globalPromptHeight = Math.max(90, Number(state.global_prompt_height) || 120);
     selectedId = null;
+    const m = mode();
+    const baseDefaults = DEFAULT_BUILDER_STATE(m);
+    const rawBuilder = builderWidget?.value || state.builder_state;
+    if (rawBuilder) {
+      try {
+        const parsed = typeof rawBuilder === "string" ? JSON.parse(rawBuilder) : rawBuilder;
+        if (parsed && typeof parsed === "object") {
+          builderState = { ...baseDefaults, ...parsed, ref: { ...baseDefaults.ref, ...(parsed.ref || {}) } };
+          builderState.mode = m;
+        }
+      } catch { /* fall back to defaults */ }
+    } else {
+      builderState = baseDefaults;
+      builderState.mode = m;
+    }
     syncNodeBounds();
     render();
     void Promise.all(state.items.filter(item => item.type === "video" && !item.thumbnail).map(async item => {
