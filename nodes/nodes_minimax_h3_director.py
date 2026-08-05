@@ -100,7 +100,9 @@ class MiniMaxH3Director:
                 value = item.get("value", item.get("tensor"))
                 if isinstance(value, str) and input_directory:
                     value = load_image(value, input_directory)
-                if mode == "L2VA" or (mode == "FL2VA" and item.get("slot", index) == 1):
+                if mode == "I2VA":
+                    first_frame = value
+                elif mode == "L2VA" or (mode == "FL2VA" and item.get("slot", index) == 1):
                     last_frame = value
                 else:
                     first_frame = value
