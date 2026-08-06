@@ -7,7 +7,9 @@ from .helper_minimax_h3_director import (
     load_embedded_video_audio, load_image, load_video, normalize_guide,
     validate_reference_limits,
 )
-from .helper_minimax_h3_prompt_builder import build_prompt, default_builder_state, validate_builder_state
+from .helper_minimax_h3_prompt_builder import (
+    build_prompt, default_builder_state, normalize_ref_schema, validate_builder_state,
+)
 
 BASE_MODES = {"T2VA", "I2VA", "FL2VA", "L2VA"}
 
@@ -74,6 +76,7 @@ class MiniMaxH3Director:
         merged = default_builder_state(mode)
         merged.update(builder)
         merged["ref"] = {**default_builder_state(mode)["ref"], **(builder.get("ref") or {})}
+        normalize_ref_schema(merged["ref"])
         merged["mode"] = mode
         merged["duration"] = duration
 

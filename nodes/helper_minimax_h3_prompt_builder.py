@@ -200,6 +200,105 @@ def build_prompt(state: dict) -> str:
     return build_ref_prompt(state) if mode == "REF2VA" else build_base_prompt(state)
 
 
+def _ensure_str(value) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def normalize_ref_schema(ref: dict) -> None:
+    """Ensure both v1 and v2 keys exist in ref for cross-mode compatibility.
+
+    V1 keys (used by prompt_payload and legacy nodes):
+        subject_defs, summary_types, summary_text, retention, style_line, detail
+
+    V2 keys (used by REF2VA prompt builder UI):
+        subject_definitions, summary, retention_analysis, detailed_description
+
+    Mutates ref in-place; prefers existing values over derived ones.
+    """
+    # --- v2 ← v1 (for REF2VA builders expecting flat strings) ---
+
+    if not _ensure_str(ref.get("subject_definitions")):
+        defs_raw = ref.get("subject_defs") or []
+        if isinstance(defs_raw, list):
+            texts = [_ensure_str(d["text"]) for d in defs_raw if isinstance(d, dict) and _ensure_str(d.get("text"))]
+            if texts:
+                ref["subject_definitions"] = "\n".join(texts)
+
+    if not _ensure_str(ref.get("summary")):
+        summary_text = _ensure_str(ref.get("summary_text"))
+        summary_types = ref.get("summary_types", ["reference generation"])
+        if summary_text:
+            chosen = [t for t in TASK_TYPES if t in summary_types]
+            types_str = " + ".join(chosen) or "reference generation"
+            ref["summary"] = f"[{types_str}] {summary_text}"
+
+    if not _ensure_str(ref.get("retention_analysis")):
+        rows = []
+        for row in ref.get("retention", []):
+            label = _ensure_str(row.get("label"))
+            context = _ensure_str(row.get("context"))
+            marker = _ensure_str(row.get("marker"))
+            note = _ensure_str(row.get("note"))
+            if not label or not marker:
+                continue
+            ctx = f" ({context})" if context else ""
+            rows.append(f"{label}{ctx}: {marker} - {note}")
+        if rows:
+            ref["retention_analysis"] = "\n".join(rows)
+
+    if not _ensure_str(ref.get("detailed_description")):
+        style_line = _ensure_str(ref.get("style_line"))
+        detail = _ensure_str(ref.get("detail"))
+        parts = [p for p in [style_line, detail] if p]
+        if parts:
+            ref["detailed_description"] = "\n".join(parts)
+
+    # --- v1 ← v2 (for prompt_payload expecting structured fields) ---
+
+    if "subject_defs" not in ref:
+        defs_text = _ensure_str(ref.get("subject_definitions"))
+        ref["subject_defs"] = [{"text": line} for line in defs_text.split("\n") if line.strip()] if defs_text else []
+
+    if "summary_text" not in ref:
+        summary = _ensure_str(ref.get("summary"))
+        # Strip leading "[task_type + task_type]" prefix if present.
+        if summary and summary.startswith("[") and "]" in summary:
+            _, rest = summary.split("]", 1)
+            ref["summary_text"] = rest.lstrip()
+        else:
+            ref["summary_text"] = summary
+
+    if "retention" not in ref:
+        lines = (_ensure_str(ref.get("retention_analysis"))).split("\n")
+        parsed = []
+        for line in lines:
+            line = line.strip()
+            if not line or ": " not in line or " - " not in line:
+                continue
+            head, tail = line.rsplit(" - ", 1)
+            marker, note = tail.rsplit(": ", 1) if ": " in tail else (tail, "")
+            left, right = head.rsplit(": ", 1) if ": " in head else (head, "")
+            label = left.strip()
+            context = ""
+            if "(" in label and ")" in label:
+                label, ctx = label.rsplit("(", 1)
+                context = ctx.rstrip(")").strip()
+                label = label.strip()
+            if label and marker.strip():
+                parsed.append({"label": label, "context": context, "marker": marker.strip(), "note": note.strip()})
+        ref["retention"] = parsed
+
+    if "style_line" not in ref:
+        dd = _ensure_str(ref.get("detailed_description"))
+        first = dd.split("\n")[0].strip() if dd else ""
+        ref["style_line"] = first
+
+    if "detail" not in ref:
+        dd = _ensure_str(ref.get("detailed_description"))
+        rest = "\n".join(dd.split("\n")[1:]).strip() if dd else ""
+        ref["detail"] = rest
+
+
 def validate_builder_state(state: dict) -> list[dict]:
     """Return list of issues: {"level": "error"|"warn"|"info", "msg": str}."""
     issues = []
@@ -208,10 +307,10 @@ def validate_builder_state(state: dict) -> list[dict]:
     if mode == "REF2VA":
         ref = state.get("ref", {})
         # Check both v2 and legacy v1 keys.
-        has_summary = bool((ref.get("summary") or "").strip() or (ref.get("summary_text") or "").strip())
+        has_summary = bool(_ensure_str(ref.get("summary")) or _ensure_str(ref.get("summary_text")))
         if not has_summary:
             issues.append({"level": "warn", "msg": "REF2VA summary is empty."})
-        has_subjects = bool((ref.get("subject_definitions") or "").strip()) or bool(ref.get("subject_defs"))
+        has_subjects = bool(_ensure_str(ref.get("subject_definitions"))) or bool(ref.get("subject_defs"))
         if not has_subjects:
             issues.append({"level": "warn", "msg": "REF2VA subject_definitions is empty."})
 
