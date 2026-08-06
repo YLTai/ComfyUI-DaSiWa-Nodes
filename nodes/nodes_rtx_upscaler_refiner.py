@@ -1,3 +1,4 @@
+import gc
 import math
 import os
 import torch
@@ -7,11 +8,19 @@ from typing import Tuple
 
 import folder_paths
 try:
-    from .helper_batch_output import allocate_cpu_output, tensor_nbytes
+    from .helper_batch_output import allocate_cpu_output, tensor_nbytes, force_gc_and_cleanup
     from .helper_logging import log_dasiwa
 except ImportError:
-    from helper_batch_output import allocate_cpu_output, tensor_nbytes
+    from helper_batch_output import allocate_cpu_output, tensor_nbytes, force_gc_and_cleanup
     from helper_logging import log_dasiwa
+
+# Optional: ComfyUI model_management for soft-empty-cache
+_model_management = None
+try:
+    import importlib
+    _model_management = importlib.import_module("model_management")
+except Exception:
+    pass
 
 # --- Constants ---
 
@@ -43,18 +52,61 @@ def _temporary_output_directory() -> str:
     return directory
 
 
-def _allocate_output_tensor(shape: Tuple[int, int, int, int], dtype: torch.dtype, device: torch.device):
-    required_bytes = _projected_output_bytes(shape[0], shape[2], shape[1], dtype)
-    if device.type != "cpu":
-        if required_bytes > MAX_GPU_OUTPUT_BYTES:
-            raise RuntimeError(
-                f"RTX output requires {required_bytes / 1024 ** 3:.2f} GiB on {device}. "
-                "Disk-backed output is only available for CPU IMAGE batches."
-            )
-        return torch.zeros(shape, device=device, dtype=dtype), None
+def _cleanup_cuda(soft_empty_cache: bool) -> None:
+    """Lightweight VRAM cleanup; optionally asks ComfyUI nicely."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if soft_empty_cache and _model_management and hasattr(_model_management, "soft_empty_cache"):
+        try:
+            _model_management.soft_empty_cache()
+        except Exception:
+            pass
 
-    directory = _temporary_output_directory()
-    return allocate_cpu_output(shape, dtype, directory)
+
+def _can_fit_in_vram(required_bytes: int, device: torch.device) -> bool:
+    """Check whether required_bytes comfortably fits in current free VRAM."""
+    if not torch.cuda.is_available():
+        return False
+    free_bytes, _ = torch.cuda.mem_get_info(device)
+    # Leave headroom for VFX effects, intermediate buffers, etc.
+    headroom_factor = 0.15
+    usable_free = int(free_bytes * (1.0 - headroom_factor))
+    return required_bytes <= max(0, usable_free)
+
+
+def _allocate_output_tensor(
+    shape: Tuple[int, int, int, int],
+    dtype: torch.dtype,
+    device: torch.device,
+    soft_empty_cache: bool = False,
+):
+    required_bytes = _projected_output_bytes(shape[0], shape[2], shape[1], dtype)
+
+    # Always run lightweight cleanup before deciding allocation strategy
+    _cleanup_cuda(soft_empty_cache=soft_empty_cache)
+
+    if device.type == "cpu":
+        directory = _temporary_output_directory()
+        return allocate_cpu_output(shape, dtype, directory)
+
+    # GPU path: check hard cap, then actual VRAM
+    if required_bytes > MAX_GPU_OUTPUT_BYTES:
+        raise RuntimeError(
+            f"RTX output requires {required_bytes / 1024 ** 3:.2f} GiB on {device}. "
+            "Disk-backed output is only available for CPU IMAGE batches."
+        )
+
+    if not _can_fit_in_vram(required_bytes, device):
+        log_dasiwa(
+            "RTX Upscaler & Refiner",
+            f"VRAM insufficient for {required_bytes / 1024 ** 3:.2f} GiB output tensor; "
+            "falling back to disk-backed CPU output.",
+        )
+        directory = _temporary_output_directory()
+        return allocate_cpu_output(shape, dtype, directory)
+
+    return torch.zeros(shape, device=device, dtype=dtype), None
 
 def _aligned_aspect_size(
     target_width: float,
@@ -388,6 +440,7 @@ class DaSiWa_RTX_UpscalerRefiner:
                 "ratio_preset": (COMMON_RATIOS, {"default": "16:9", "description": "Forced aspect ratio (used by 'Preset Ratio')."}),
                 "resize_method": (RESIZE_METHODS, {"default": "Center Crop (Fill)", "description": "Mismatch handling: 'Crop' fills the target area, 'Letterbox' fits inside with black bars."}),
                 "device_id": ("INT", {"default": 0, "min": 0, "max": 8, "step": 1, "description": "GPU Index for RTX VFX computation."}),
+                "empty_cache": ("BOOLEAN", {"default": False, "description": "Run a lightweight GC + empty_cache before allocation; also calls model_management.soft_empty_cache() to ask ComfyUI models to unload, which can free VRAM but may slow subsequent nodes."}),
             },
         }
 
@@ -427,6 +480,7 @@ class DaSiWa_RTX_UpscalerRefiner:
         ratio_preset,
         resize_method,
         device_id,
+        empty_cache,
     ):
         if not torch.cuda.is_available():
             raise RuntimeError("NVIDIA RTX VFX requires CUDA. No CUDA devices found.")
@@ -478,7 +532,7 @@ class DaSiWa_RTX_UpscalerRefiner:
             f"Input={source_width}x{source_height}, target={target_width}x{target_height}, "
             f"frames={batch_size}, output={projected_bytes / 1024 ** 3:.2f} GiB.",
         )
-        out, mmap_path = _allocate_output_tensor(output_shape, out_dtype, out_device)
+        out, mmap_path = _allocate_output_tensor(output_shape, out_dtype, out_device, soft_empty_cache=empty_cache)
         if mmap_path:
             log_dasiwa("RTX Upscaler & Refiner", f"Disk-backed output: {mmap_path}")
 
@@ -539,6 +593,10 @@ class DaSiWa_RTX_UpscalerRefiner:
                             if out_device.type == "cuda":
                                 torch.cuda.synchronize(out_device)
                             del chunk
+
+        # Proactive cleanup: force GC to release mmap files immediately,
+        # preventing swap/pagefile buildup from lingering temp tensors.
+        force_gc_and_cleanup(_temporary_output_directory())
 
         return (out,)
 

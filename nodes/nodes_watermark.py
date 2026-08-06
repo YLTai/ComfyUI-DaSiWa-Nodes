@@ -6,7 +6,8 @@ from PIL import Image
 from typing import Tuple
 import folder_paths
 import comfy.utils
-from .helper_batch_output import allocate_cpu_output
+import gc
+from .helper_batch_output import allocate_cpu_output, force_gc_and_cleanup
 from .helper_logging import log_dasiwa
 
 # --- Helpers ---
@@ -282,6 +283,10 @@ class DaSiWa_Watermark:
                     out_i[y0:y1, x0:x1] = roi.permute(1, 2, 0).to(device=output_device, dtype=output_dtype)
 
                 pbar.update(1)
+
+            # Proactive cleanup: force GC to release mmap files immediately
+            gc.collect()
+            force_gc_and_cleanup(folder_paths.get_temp_directory())
 
             return (out,)
 

@@ -1,3 +1,4 @@
+import gc
 import math
 import os
 import shutil
@@ -48,6 +49,19 @@ def _remove_temporary_output(path: str) -> None:
         pass
     except OSError:
         pass
+
+
+def force_gc_and_cleanup(directory: Optional[str] = None) -> None:
+    """Force GC immediately to release mmap files."""
+    gc.collect()
+    if directory is None:
+        try:
+            import folder_paths
+            directory = folder_paths.get_temp_directory()
+        except Exception:
+            return
+    if directory is None:
+        return
 
 
 def allocate_cpu_output(
