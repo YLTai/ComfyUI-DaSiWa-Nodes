@@ -196,6 +196,10 @@ def decode_audio_frame(frame) -> np.ndarray:
     single interleaved row for packed ones (s16 — PCM WAV). Left interleaved, a
     stereo clip measures twice its real length and every crop offset lands on
     the wrong sample.
+
+    Integer formats are scaled by their maximum magnitude, not their maximum
+    value, so a full-scale -32768 lands on exactly -1.0 instead of overshooting
+    the unit range.
     """
     samples = frame.to_ndarray()
     if samples.ndim == 1:
@@ -203,8 +207,11 @@ def decode_audio_frame(frame) -> np.ndarray:
     channels = samples.shape[-1] // frame.samples if frame.samples else 1
     if channels > 1 and samples.shape[0] == 1:
         samples = np.ascontiguousarray(samples.reshape(-1, channels).T)
-    if not samples.dtype.kind == "f":
-        samples = samples.astype(np.float32) / np.iinfo(samples.dtype).max
+    if samples.dtype.kind == "u":
+        midpoint = 2.0 ** (8 * samples.dtype.itemsize - 1)
+        samples = (samples.astype(np.float32) - midpoint) / midpoint
+    elif samples.dtype.kind != "f":
+        samples = samples.astype(np.float32) / -float(np.iinfo(samples.dtype).min)
     return samples
 
 
@@ -274,10 +281,9 @@ def load_embedded_video_audio(path: str, input_directory: str, *, trim_start: fl
                 chunks.append(torch.from_numpy(array[:, start:end]).float())
         if not chunks:
             raise ValueError("embedded video audio trim range produced no samples")
-        waveform = torch.cat(chunks, dim=-1)
-        if waveform.dtype.is_floating_point and waveform.abs().max() > 1:
-            waveform /= 32768.0
-        return {"waveform": waveform.unsqueeze(0), "sample_rate": sample_rate}
+        # decode_audio_frame() already returns unit-range floats, so the former
+        # int16 rescale here would only ever fire on correctly scaled audio.
+        return {"waveform": torch.cat(chunks, dim=-1).unsqueeze(0), "sample_rate": sample_rate}
     finally:
         container.close()
 
