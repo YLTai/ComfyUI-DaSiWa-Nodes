@@ -203,6 +203,57 @@ def test_load_audio_applies_timeline_crop(tmp_path):
     assert audio_duration(audio) == 15
 
 
+def _write_packed_stereo_wav(path, seconds, sample_rate=8_000):
+    """Write a PCM s16 stereo file — a packed (interleaved) PyAV sample format."""
+    frames = np.zeros((seconds * sample_rate, 2), dtype=np.int16)
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(2)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(frames.tobytes())
+
+
+def test_load_audio_deinterleaves_packed_stereo(tmp_path):
+    path = tmp_path / "stereo.wav"
+    _write_packed_stereo_wav(path, seconds=10)
+
+    audio = load_audio(path.name, str(tmp_path))
+
+    assert audio["waveform"].shape[1] == 2
+    assert audio_duration(audio) == 10
+
+
+def test_load_audio_crops_packed_stereo_on_real_seconds(tmp_path):
+    path = tmp_path / "stereo.wav"
+    _write_packed_stereo_wav(path, seconds=20)
+
+    audio = load_audio(path.name, str(tmp_path), trim_start=2, trim_end=17)
+
+    assert audio["waveform"].shape[1] == 2
+    assert audio_duration(audio) == 15
+
+
+def test_load_embedded_video_audio_deinterleaves_packed_stereo(tmp_path):
+    av = pytest.importorskip("av")
+    path = tmp_path / "stereo_packed.mkv"
+    sample_rate = 8_000
+    with av.open(str(path), "w") as output:
+        stream = output.add_stream("pcm_s16le", rate=sample_rate)
+        stream.layout = "stereo"
+        for _ in range(10 * sample_rate // 1024):
+            frame = av.AudioFrame.from_ndarray(np.zeros((1, 1024 * 2), dtype=np.int16), format="s16", layout="stereo")
+            frame.sample_rate = sample_rate
+            for packet in stream.encode(frame):
+                output.mux(packet)
+        for packet in stream.encode():
+            output.mux(packet)
+
+    audio = load_embedded_video_audio(path.name, str(tmp_path))
+
+    assert audio["waveform"].shape[1] == 2
+    assert audio_duration(audio) == pytest.approx(10, abs=0.1)
+
+
 def test_load_embedded_video_audio_applies_the_video_crop(tmp_path):
     av = pytest.importorskip("av")
     path = tmp_path / "reference.m4a"

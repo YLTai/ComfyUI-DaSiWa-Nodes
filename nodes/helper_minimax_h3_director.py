@@ -189,6 +189,25 @@ def load_image(path: str, input_directory: str):
     return torch.from_numpy(array).unsqueeze(0)
 
 
+def decode_audio_frame(frame) -> np.ndarray:
+    """Return one decoded audio frame as float samples shaped (channels, samples).
+
+    PyAV yields (channels, samples) for planar formats (fltp — MP3, AAC) but a
+    single interleaved row for packed ones (s16 — PCM WAV). Left interleaved, a
+    stereo clip measures twice its real length and every crop offset lands on
+    the wrong sample.
+    """
+    samples = frame.to_ndarray()
+    if samples.ndim == 1:
+        samples = samples[None, :]
+    channels = samples.shape[-1] // frame.samples if frame.samples else 1
+    if channels > 1 and samples.shape[0] == 1:
+        samples = np.ascontiguousarray(samples.reshape(-1, channels).T)
+    if not samples.dtype.kind == "f":
+        samples = samples.astype(np.float32) / np.iinfo(samples.dtype).max
+    return samples
+
+
 def load_audio(path: str, input_directory: str, *, trim_start: float = 0.0,
                trim_end: float | None = None):
     full_path = resolve_input_path(path, input_directory)
@@ -210,11 +229,7 @@ def load_audio(path: str, input_directory: str, *, trim_start: float = 0.0,
             frame_end = timestamp + float(frame.samples) / sample_rate
             if frame_end <= trim_start or (trim_end is not None and timestamp >= trim_end):
                 continue
-            samples = frame.to_ndarray()
-            if samples.ndim == 1:
-                samples = samples[None, :]
-            if not samples.dtype.kind == "f":
-                samples = samples.astype(np.float32) / np.iinfo(samples.dtype).max
+            samples = decode_audio_frame(frame)
             start = max(0, int(round((trim_start - timestamp) * sample_rate)))
             end = samples.shape[-1] if trim_end is None else min(samples.shape[-1], int(round((trim_end - timestamp) * sample_rate)))
             if end > start:
@@ -252,9 +267,7 @@ def load_embedded_video_audio(path: str, input_directory: str, *, trim_start: fl
             frame_end = timestamp + float(frame.samples) / sample_rate
             if frame_end <= trim_start or (trim_end is not None and timestamp >= trim_end):
                 continue
-            array = frame.to_ndarray()
-            if array.ndim == 1:
-                array = array[None, :]
+            array = decode_audio_frame(frame)
             start = max(0, int(round((trim_start - timestamp) * sample_rate)))
             end = array.shape[-1] if trim_end is None else min(array.shape[-1], int(round((trim_end - timestamp) * sample_rate)))
             if end > start:
